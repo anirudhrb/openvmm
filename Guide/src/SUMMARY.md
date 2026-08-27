@@ -127,6 +127,7 @@
       - [Overview](./reference/emulated/pcie/overview.md)
     - [IOMMU]()
       - [Arm SMMUv3](./reference/emulated/iommu/smmuv3.md)
+    - [GICv3 ITS](./reference/emulated/gic_its.md)
 - [Device Backends]()
   - [Serial]()
   - [Graphics and Input]()

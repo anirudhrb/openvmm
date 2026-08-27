@@ -1,0 +1,23 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+[package]
+name = "gic_its"
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+chipset_device.workspace = true
+guestmem.workspace = true
+inspect.workspace = true
+tracelimit.workspace = true
+vits_core.workspace = true
+vmcore.workspace = true
+
+[dev-dependencies]
+pal_async.workspace = true
+parking_lot.workspace = true
+test_with_tracing.workspace = true
+
+[lints]
+workspace = true

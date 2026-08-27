@@ -28,6 +28,10 @@ members = [
   "petri/burette",
   # hyper-v tooling
   "hyperv/tools/hypestv",
+  # library crates with no in-tree consumer yet
+  #
+  # Remove once another workspace member depends on them.
+  "vm/devices/gic_its",
   # fuzzing
   "support/inspect/fuzz",
   "support/mesh/mesh_protobuf/fuzz",
@@ -463,6 +467,15 @@ profiler_worker = { path = "openhcl/profiler_worker" }
 vnc = { path = "workers/vnc_worker/vnc" }
 vnc_worker = { path = "workers/vnc_worker" }
 vnc_worker_defs = { path = "workers/vnc_worker_defs" }
+
+# out-of-tree first-party crates
+#
+# `vits_core` is the shared GICv3 ITS control-plane emulator, maintained outside
+# this repo so that it can also be consumed by the Windows implementation it was
+# extracted from. It is consumed as a sibling-directory path dependency for
+# local development only; it must be vendored or published before any change
+# that depends on it can build in CI.
+vits_core = { path = "../vits_core" }
 
 # crates.io
 
