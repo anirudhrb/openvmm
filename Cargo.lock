@@ -3003,6 +3003,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "gic_its"
+version = "0.0.0"
+dependencies = [
+ "chipset_device",
+ "guestmem",
+ "inspect",
+ "pal_async",
+ "parking_lot",
+ "test_with_tracing",
+ "tracelimit",
+ "vits_core",
+ "vmcore",
+]
+
+[[package]]
 name = "gimli"
 version = "0.31.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10259,6 +10274,16 @@ name = "virtue"
 version = "0.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "051eb1abcf10076295e815102942cc58f9d5e3b4560e46e53c21e8ff6f3af7b1"
+
+[[package]]
+name = "vits_core"
+version = "0.0.0"
+dependencies = [
+ "test_with_tracing",
+ "thiserror 2.0.16",
+ "tracelimit",
+ "tracing",
+]
 
 [[package]]
 name = "vm_loader"

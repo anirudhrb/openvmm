@@ -30,6 +30,10 @@ members = [
   "vmm_tests/vmm_perf",
   # hyper-v tooling
   "hyperv/tools/hypestv",
+  # library crates with no in-tree consumer yet
+  #
+  # Remove once another workspace member depends on them.
+  "vm/devices/gic_its",
   # fuzzing
   "support/inspect/fuzz",
   "support/mesh/mesh_protobuf/fuzz",
@@ -265,6 +269,7 @@ hyperv_secure_boot_templates = { path = "vm/devices/firmware/hyperv_secure_boot_
 hyperv_uefi_custom_vars_json = { path = "vm/devices/firmware/hyperv_uefi_custom_vars_json" }
 smbios_defs = { path = "vm/devices/firmware/smbios_defs" }
 framebuffer = { path = "vm/devices/framebuffer" }
+vits_core = { path = "vm/devices/gic_its/vits_core" }
 hcl_compat_uefi_nvram_resources = { path = "vm/devices/firmware/hcl_compat_uefi_nvram_resources" }
 hcl_compat_uefi_nvram_storage = { path = "vm/devices/firmware/hcl_compat_uefi_nvram_storage" }
 generation_id = { path = "vm/devices/firmware/generation_id" }
