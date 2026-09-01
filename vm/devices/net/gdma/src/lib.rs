@@ -420,7 +420,7 @@ impl MmioIntercept for GdmaDevice {
         IoResult::Ok
     }
 
-    fn mmio_write(&mut self, address: u64, data: &[u8]) -> IoResult {
+    fn mmio_write(&mut self, _vp_index: u32, address: u64, data: &[u8]) -> IoResult {
         if let Some((bar, offset)) = self.config.find_bar(address) {
             match bar {
                 0 => self.write_reg(offset as usize, data),

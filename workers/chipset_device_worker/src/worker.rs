@@ -270,12 +270,12 @@ impl<T: RemoteDynamicResolvers> Worker for RemoteChipsetDeviceWorker<T> {
                                 .mmio_read(address, &mut data);
                             self.handle_read_result(id, result, data);
                         }
-                        DeviceRequest::MmioWrite(WriteRequest { id, address, data }) => {
+                        DeviceRequest::MmioWrite(vp_index, WriteRequest { id, address, data }) => {
                             let result = self
                                 .device
                                 .supports_mmio()
                                 .unwrap()
-                                .mmio_write(address, &data);
+                                .mmio_write(vp_index, address, &data);
                             self.handle_write_result(id, result);
                         }
                         DeviceRequest::PioRead(ReadRequest { id, address, size }) => {

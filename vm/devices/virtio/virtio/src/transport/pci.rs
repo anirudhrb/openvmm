@@ -982,7 +982,7 @@ impl MmioIntercept for VirtioPciDevice {
         IoResult::Ok
     }
 
-    fn mmio_write(&mut self, address: u64, data: &[u8]) -> IoResult {
+    fn mmio_write(&mut self, _vp_index: u32, address: u64, data: &[u8]) -> IoResult {
         let Some((bar, offset)) = self.pci.config_space.find_bar(address) else {
             return IoResult::Err(IoError::InvalidRegister);
         };

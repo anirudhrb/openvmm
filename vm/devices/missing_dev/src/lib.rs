@@ -157,7 +157,7 @@ impl MmioIntercept for MissingDev {
         IoResult::Ok
     }
 
-    fn mmio_write(&mut self, _addr: u64, _data: &[u8]) -> IoResult {
+    fn mmio_write(&mut self, _vp_index: u32, _addr: u64, _data: &[u8]) -> IoResult {
         IoResult::Ok
     }
 }

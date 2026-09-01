@@ -15,9 +15,17 @@ use std::ops::RangeInclusive;
 /// `guestmem::MemoryMapper` object.
 pub trait MmioIntercept: ChipsetDevice {
     /// Dispatch an MMIO read to the device with the given address.
+    //
+    // DEVNOTE: unlike `mmio_write`, this deliberately does not take a VP index.
+    // No device has needed one for reads, and `chipset_device` prefers to keep
+    // its interfaces minimal. Add one here if and when a device requires it.
     fn mmio_read(&mut self, addr: u64, data: &mut [u8]) -> IoResult;
     /// Dispatch an MMIO write to the device with the given address.
-    fn mmio_write(&mut self, addr: u64, data: &[u8]) -> IoResult;
+    ///
+    /// `vp_index` identifies the virtual processor that issued the write.
+    /// Accesses that do not originate from a VP (e.g. host-initiated PCI config
+    /// space access via ECAM) report VP index 0.
+    fn mmio_write(&mut self, vp_index: u32, addr: u64, data: &[u8]) -> IoResult;
 
     /// Report a set of static static mmio regions (region_name, gpa_range) that
     /// cannot be remapped at runtime and are always registered.

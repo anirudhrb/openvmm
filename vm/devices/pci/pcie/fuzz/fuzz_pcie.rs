@@ -168,8 +168,8 @@ impl FuzzRootComplex {
         }
     }
 
-    pub fn mmio_write(&mut self, addr: u64, data: &[u8]) -> Result<(), IoError> {
-        match self.rc.mmio_write(addr, data) {
+    pub fn mmio_write(&mut self, vp: u32, addr: u64, data: &[u8]) -> Result<(), IoError> {
+        match self.rc.mmio_write(vp, addr, data) {
             IoResult::Defer(t) => {
                 // Poll the deferred write and panic if it doesn't complete. This keeps the
                 // fuzzing logic simple by avoiding the need to track pending deferred operations.
@@ -320,8 +320,8 @@ fn do_fuzz(u: &mut Unstructured<'_>) -> arbitrary::Result<()> {
     // Subordinate bus number register is at config space offset 0x1A.
     // We assign secondary=1, subordinate=3 so buses 1-3 route through port 0.
     let rp0_ecam_base = ECAM_BASE; // bus 0, device 0, function 0
-    rc.mmio_write(rp0_ecam_base + 0x19, &[1u8]).unwrap(); // secondary = 1
-    rc.mmio_write(rp0_ecam_base + 0x1A, &[END_BUS]).unwrap(); // subordinate = END_BUS
+    rc.mmio_write(0, rp0_ecam_base + 0x19, &[1u8]).unwrap(); // secondary = 1
+    rc.mmio_write(0, rp0_ecam_base + 0x1A, &[END_BUS]).unwrap(); // subordinate = END_BUS
 
     // For the switch topology, also program the switch's upstream port bus
     // numbers so its routing logic is reachable. The switch's upstream port
@@ -329,13 +329,13 @@ fn do_fuzz(u: &mut Unstructured<'_>) -> arbitrary::Result<()> {
     // Then program downstream port 0's bus numbers to enable deep routing.
     if matches!(topology, Topology::WithSwitch) {
         let switch_ecam = ECAM_BASE + (256 * 4096); // bus 1, dev 0, fn 0
-        rc.mmio_write(switch_ecam + 0x19, &[2u8]).unwrap(); // switch secondary = 2
-        rc.mmio_write(switch_ecam + 0x1A, &[END_BUS]).unwrap(); // switch subordinate = END_BUS
+        rc.mmio_write(0, switch_ecam + 0x19, &[2u8]).unwrap(); // switch secondary = 2
+        rc.mmio_write(0, switch_ecam + 0x1A, &[END_BUS]).unwrap(); // switch subordinate = END_BUS
 
         // Program downstream port 0 (bus 2, device 0) with secondary=3
         let ds_port0_ecam = ECAM_BASE + (2u64 * 256 * 4096); // bus 2, dev 0, fn 0
-        rc.mmio_write(ds_port0_ecam + 0x19, &[3u8]).unwrap(); // ds port secondary = 3
-        rc.mmio_write(ds_port0_ecam + 0x1A, &[END_BUS]).unwrap(); // ds port subordinate = END_BUS
+        rc.mmio_write(0, ds_port0_ecam + 0x19, &[3u8]).unwrap(); // ds port secondary = 3
+        rc.mmio_write(0, ds_port0_ecam + 0x1A, &[END_BUS]).unwrap(); // ds port subordinate = END_BUS
     }
 
     // Drive MMIO reads and writes directly on the root complex.
@@ -351,10 +351,15 @@ fn do_fuzz(u: &mut Unstructured<'_>) -> arbitrary::Result<()> {
                 let len = size.byte_count();
                 let _ = rc.mmio_read(addr, &mut buf[..len]);
             }
-            FuzzAction::MmioWrite { offset, size, data } => {
+            FuzzAction::MmioWrite {
+                vp,
+                offset,
+                size,
+                data,
+            } => {
                 let addr = ECAM_BASE + (offset as u64 % ecam_len);
                 let len = size.byte_count();
-                let _ = rc.mmio_write(addr, &data.to_le_bytes()[..len]);
+                let _ = rc.mmio_write(vp, addr, &data.to_le_bytes()[..len]);
             }
             FuzzAction::Reset => {
                 // Use a dummy async context — reset needs async but the PCIe
@@ -402,6 +407,7 @@ enum FuzzAction {
         size: AccessSize,
     },
     MmioWrite {
+        vp: u32,
         offset: u32,
         size: AccessSize,
         data: u128, // large enough for 16-byte writes

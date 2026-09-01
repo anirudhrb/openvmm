@@ -221,7 +221,7 @@ impl MmioIntercept for GicItsDevice {
         IoResult::Ok
     }
 
-    fn mmio_write(&mut self, addr: u64, data: &[u8]) -> IoResult {
+    fn mmio_write(&mut self, _vp_index: u32, addr: u64, data: &[u8]) -> IoResult {
         let value = match data.len() {
             4 => u32::from_le_bytes(data.try_into().unwrap()) as u64,
             8 => u64::from_le_bytes(data.try_into().unwrap()),
@@ -407,13 +407,13 @@ mod tests {
 
         fn write32(&mut self, offset: u32, value: u32) {
             self.dev
-                .mmio_write(MMIO_BASE + offset as u64, &value.to_le_bytes())
+                .mmio_write(0, MMIO_BASE + offset as u64, &value.to_le_bytes())
                 .unwrap();
         }
 
         fn write64(&mut self, offset: u32, value: u64) {
             self.dev
-                .mmio_write(MMIO_BASE + offset as u64, &value.to_le_bytes())
+                .mmio_write(0, MMIO_BASE + offset as u64, &value.to_le_bytes())
                 .unwrap();
         }
 
@@ -532,7 +532,7 @@ mod tests {
                 IoResult::Err(IoError::InvalidAccessSize)
             ));
             assert!(matches!(
-                d.dev.mmio_write(MMIO_BASE, &data),
+                d.dev.mmio_write(0, MMIO_BASE, &data),
                 IoResult::Err(IoError::InvalidAccessSize)
             ));
         }

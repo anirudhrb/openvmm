@@ -579,7 +579,7 @@ impl MmioIntercept for NvmeFaultController {
         }
     }
 
-    fn mmio_write(&mut self, addr: u64, data: &[u8]) -> IoResult {
+    fn mmio_write(&mut self, _vp_index: u32, addr: u64, data: &[u8]) -> IoResult {
         match self.cfg_space.find_bar(addr) {
             Some((0, _)) if !self.bar0_reachable() => {
                 tracelimit::warn_ratelimited!(

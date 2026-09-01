@@ -78,10 +78,10 @@ fn write_msix_table_entry(
         data_control |= 1u64 << 32;
     }
     controller
-        .mmio_write(mmio_address, address.as_bytes())
+        .mmio_write(0, mmio_address, address.as_bytes())
         .unwrap();
     controller
-        .mmio_write(mmio_address + 8, data_control.as_bytes())
+        .mmio_write(0, mmio_address + 8, data_control.as_bytes())
         .unwrap();
 }
 

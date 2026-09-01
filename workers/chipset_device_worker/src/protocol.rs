@@ -49,8 +49,8 @@ pub(crate) struct PciInit {
 pub(crate) enum DeviceRequest {
     /// Perform a MMIO read operation.
     MmioRead(ReadRequest<u64>),
-    /// Perform a MMIO write operation.
-    MmioWrite(WriteRequest<u64, Vec<u8>>),
+    /// Perform a MMIO write operation, on behalf of the given VP index.
+    MmioWrite(u32, WriteRequest<u64, Vec<u8>>),
     /// Perform a PIO read operation.
     PioRead(ReadRequest<u16>),
     /// Perform a PIO write operation.

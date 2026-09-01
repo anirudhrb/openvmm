@@ -610,7 +610,7 @@ impl MmioIntercept for GenericPcieRootComplex {
         result
     }
 
-    fn mmio_write(&mut self, addr: u64, data: &[u8]) -> IoResult {
+    fn mmio_write(&mut self, _vp_index: u32, addr: u64, data: &[u8]) -> IoResult {
         if let Some(result) = self.mmio_write_non_ecam(addr, data) {
             return result;
         }
@@ -1362,12 +1362,12 @@ mod tests {
             .unwrap();
         assert_eq!(bus_number, 0);
 
-        rc.mmio_write(SECONDARY_BUS_NUM_REG, &[1]).unwrap();
+        rc.mmio_write(0, SECONDARY_BUS_NUM_REG, &[1]).unwrap();
         rc.mmio_read(SECONDARY_BUS_NUM_REG, bus_number.as_mut_bytes())
             .unwrap();
         assert_eq!(bus_number, 1);
 
-        rc.mmio_write(SUBOORDINATE_BUS_NUM_REG, &[2]).unwrap();
+        rc.mmio_write(0, SUBOORDINATE_BUS_NUM_REG, &[2]).unwrap();
         rc.mmio_read(SUBOORDINATE_BUS_NUM_REG, bus_number.as_mut_bytes())
             .unwrap();
         assert_eq!(bus_number, 2);
@@ -1396,7 +1396,7 @@ mod tests {
         assert_eq!(value_32, 0xDEAD_BEEF);
 
         // Reassign the secondary bus number to 2.
-        rc.mmio_write(SECONDARY_BUS_NUM_REG, &[2]).unwrap();
+        rc.mmio_write(0, SECONDARY_BUS_NUM_REG, &[2]).unwrap();
         rc.mmio_read(SECONDARY_BUS_NUM_REG, bus_number.as_mut_bytes())
             .unwrap();
         assert_eq!(bus_number, 2);
@@ -1417,8 +1417,8 @@ mod tests {
         const ENDPOINT_ECAM: u64 = 256 * 4096;
 
         let mut rc = instantiate_root_complex(0, 255, 1);
-        rc.mmio_write(SECONDARY_BUS_NUM_REG, &[1]).unwrap();
-        rc.mmio_write(SUBORDINATE_BUS_NUM_REG, &[1]).unwrap();
+        rc.mmio_write(0, SECONDARY_BUS_NUM_REG, &[1]).unwrap();
+        rc.mmio_write(0, SUBORDINATE_BUS_NUM_REG, &[1]).unwrap();
 
         let state = Arc::new(Mutex::new(DeferredEndpointState::new(0x1122_3344)));
         rc.add_pcie_device(
@@ -1466,12 +1466,12 @@ mod tests {
             Err(IoError::NoResponse)
         ));
 
-        let partial_write = rc.mmio_write(ENDPOINT_ECAM + 1, &[0xaa]);
+        let partial_write = rc.mmio_write(0, ENDPOINT_ECAM + 1, &[0xaa]);
         assert!(matches!(partial_write, IoResult::Ok));
 
         state.lock().defer_reads = false;
         state.lock().defer_writes = true;
-        let full_write = rc.mmio_write(ENDPOINT_ECAM, 0xaabb_ccddu32.as_bytes());
+        let full_write = rc.mmio_write(0, ENDPOINT_ECAM, 0xaabb_ccddu32.as_bytes());
         let IoResult::Defer(full_write_token) = full_write else {
             panic!("full downstream config write should defer through the root complex");
         };
@@ -1486,7 +1486,7 @@ mod tests {
             ))
         );
 
-        let full_write = rc.mmio_write(ENDPOINT_ECAM, 0x1122_3344u32.as_bytes());
+        let full_write = rc.mmio_write(0, ENDPOINT_ECAM, 0x1122_3344u32.as_bytes());
         let IoResult::Defer(full_write_token) = full_write else {
             panic!("full downstream config write should defer through the root complex");
         };
@@ -1513,9 +1513,10 @@ mod tests {
         const ENDPOINT_ECAM: u64 = ENDPOINT_BUS as u64 * 256 * 4096;
 
         let mut rc = instantiate_root_complex(0, 255, 1);
-        rc.mmio_write(ROOT_SECONDARY_BUS_NUM_REG, &[SWITCH_BUS])
+        rc.mmio_write(0, ROOT_SECONDARY_BUS_NUM_REG, &[SWITCH_BUS])
             .unwrap();
-        rc.mmio_write(ROOT_SUBORDINATE_BUS_NUM_REG, &[10]).unwrap();
+        rc.mmio_write(0, ROOT_SUBORDINATE_BUS_NUM_REG, &[10])
+            .unwrap();
 
         let switch = Arc::new(Mutex::new(
             GenericPcieSwitch::new(GenericPcieSwitchDefinition {
@@ -1624,7 +1625,7 @@ mod tests {
         );
 
         let value = 0x1122_3344u32;
-        rc.mmio_write(chbcr_start + 0x1008, value.as_bytes())
+        rc.mmio_write(0, chbcr_start + 0x1008, value.as_bytes())
             .unwrap();
 
         let mut read_back: u32 = 0;
@@ -1650,7 +1651,7 @@ mod tests {
         );
 
         let value = 0x1122_3344_5566_7788u64;
-        rc.mmio_write(chbcr_start + 0x1008, value.as_bytes())
+        rc.mmio_write(0, chbcr_start + 0x1008, value.as_bytes())
             .unwrap();
 
         let mut read_back: u64 = 0;
@@ -1679,7 +1680,7 @@ mod tests {
 
         // Unmapped CHBCR writes should be ignored but treated as handled.
         let value = 0x0123_4567_89ab_cdefu64;
-        rc.mmio_write(chbcr_start + 0x800, value.as_bytes())
+        rc.mmio_write(0, chbcr_start + 0x800, value.as_bytes())
             .unwrap();
     }
 
@@ -1694,9 +1695,9 @@ mod tests {
         let mut value_16: u16 = 0;
 
         // Write the command register of both ports with a reasonable value.
-        rc.mmio_write(PORT0_ECAM + COMMAND_REG, COMMAND_REG_VALUE.as_bytes())
+        rc.mmio_write(0, PORT0_ECAM + COMMAND_REG, COMMAND_REG_VALUE.as_bytes())
             .unwrap();
-        rc.mmio_write(PORT1_ECAM + COMMAND_REG, COMMAND_REG_VALUE.as_bytes())
+        rc.mmio_write(0, PORT1_ECAM + COMMAND_REG, COMMAND_REG_VALUE.as_bytes())
             .unwrap();
         rc.mmio_read(PORT0_ECAM + COMMAND_REG, value_16.as_mut_bytes())
             .unwrap();
@@ -1715,9 +1716,9 @@ mod tests {
         assert_eq!(value_16, 0);
 
         // Re-write the command register of both ports after reset.
-        rc.mmio_write(PORT0_ECAM + COMMAND_REG, COMMAND_REG_VALUE.as_bytes())
+        rc.mmio_write(0, PORT0_ECAM + COMMAND_REG, COMMAND_REG_VALUE.as_bytes())
             .unwrap();
-        rc.mmio_write(PORT1_ECAM + COMMAND_REG, COMMAND_REG_VALUE.as_bytes())
+        rc.mmio_write(0, PORT1_ECAM + COMMAND_REG, COMMAND_REG_VALUE.as_bytes())
             .unwrap();
         rc.mmio_read(PORT0_ECAM + COMMAND_REG, value_16.as_mut_bytes())
             .unwrap();
@@ -1832,14 +1833,14 @@ mod tests {
         let mut rc = instantiate_root_complex(0, 255, 2);
 
         // Configure bus numbers on port 0
-        rc.mmio_write(SECONDARY_BUS_NUM_REG, &[1]).unwrap();
-        rc.mmio_write(SUBORDINATE_BUS_NUM_REG, &[10]).unwrap();
+        rc.mmio_write(0, SECONDARY_BUS_NUM_REG, &[1]).unwrap();
+        rc.mmio_write(0, SUBORDINATE_BUS_NUM_REG, &[10]).unwrap();
 
         // Configure bus numbers on port 1 (at devfn 1 with multi-function packing)
         const PORT1_ECAM: u64 = 4096;
-        rc.mmio_write(PORT1_ECAM + SECONDARY_BUS_NUM_REG, &[11])
+        rc.mmio_write(0, PORT1_ECAM + SECONDARY_BUS_NUM_REG, &[11])
             .unwrap();
-        rc.mmio_write(PORT1_ECAM + SUBORDINATE_BUS_NUM_REG, &[20])
+        rc.mmio_write(0, PORT1_ECAM + SUBORDINATE_BUS_NUM_REG, &[20])
             .unwrap();
 
         // Verify the bus numbers are set
@@ -1957,7 +1958,7 @@ mod tests {
         );
 
         let programmed = 0x3344_5566u32;
-        rc.mmio_write(chbcr_start + 0x1008, programmed.as_bytes())
+        rc.mmio_write(0, chbcr_start + 0x1008, programmed.as_bytes())
             .unwrap();
 
         let saved_state = rc.save().expect("save should succeed");
@@ -2000,15 +2001,15 @@ mod tests {
         rc.add_pcie_device(0, "ep", Box::new(endpoint)).unwrap();
 
         // Program secondary=5, subordinate=10 via ECAM MMIO writes.
-        rc.mmio_write(SECONDARY_BUS_NUM_REG, &[5]).unwrap();
-        rc.mmio_write(SUBORDINATE_BUS_NUM_REG, &[10]).unwrap();
+        rc.mmio_write(0, SECONDARY_BUS_NUM_REG, &[5]).unwrap();
+        rc.mmio_write(0, SUBORDINATE_BUS_NUM_REG, &[10]).unwrap();
 
         // The shared AssignedBusRange should reflect the new values.
         assert_eq!(bus_range.bus_range(), (5, 10));
 
         // Reprogram bus numbers and verify tracking follows.
-        rc.mmio_write(SECONDARY_BUS_NUM_REG, &[20]).unwrap();
-        rc.mmio_write(SUBORDINATE_BUS_NUM_REG, &[30]).unwrap();
+        rc.mmio_write(0, SECONDARY_BUS_NUM_REG, &[20]).unwrap();
+        rc.mmio_write(0, SUBORDINATE_BUS_NUM_REG, &[30]).unwrap();
         assert_eq!(bus_range.bus_range(), (20, 30));
     }
 
@@ -2054,7 +2055,7 @@ mod tests {
 
         // ECAM write at device 0, function 0 should route to the RCiEP
         // (the test endpoint accepts all writes).
-        rc.mmio_write(0, &0x1234_5678u32.to_le_bytes()).unwrap();
+        rc.mmio_write(0, 0, &0x1234_5678u32.to_le_bytes()).unwrap();
 
         // Root port at device 1 should still be accessible.
         let mut root_port_vendor: u32 = 0;

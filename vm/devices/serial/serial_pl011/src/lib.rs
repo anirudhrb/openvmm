@@ -838,7 +838,7 @@ impl MmioIntercept for SerialPl011 {
         self.read(addr, data)
     }
 
-    fn mmio_write(&mut self, addr: u64, data: &[u8]) -> IoResult {
+    fn mmio_write(&mut self, _vp_index: u32, addr: u64, data: &[u8]) -> IoResult {
         self.write(addr, data)
     }
 
@@ -1214,110 +1214,114 @@ mod tests {
 
         let data = vec![0; 1];
         assert!(matches!(
-            serial.mmio_write(Register::UARTIBRD.0.into(), &data),
+            serial.mmio_write(0, Register::UARTIBRD.0.into(), &data),
             IoResult::Err(IoError::InvalidAccessSize)
         ));
 
         let data = vec![0; 2];
-        serial.mmio_write(0, &data).unwrap();
+        serial.mmio_write(0, 0, &data).unwrap();
 
         let data = vec![0; 3];
-        serial.mmio_write(0, &data).unwrap();
+        serial.mmio_write(0, 0, &data).unwrap();
 
         let data = vec![0; 4];
-        serial.mmio_write(0, &data).unwrap();
+        serial.mmio_write(0, 0, &data).unwrap();
 
         let data = vec![0; 5];
-        serial.mmio_write(0, &data).unwrap();
+        serial.mmio_write(0, 0, &data).unwrap();
 
         assert!(matches!(
-            serial.mmio_write(1, &data),
+            serial.mmio_write(0, 1, &data),
             IoResult::Err(IoError::UnalignedAccess)
         ));
         assert!(matches!(
-            serial.mmio_write(2, &data),
+            serial.mmio_write(0, 2, &data),
             IoResult::Err(IoError::UnalignedAccess)
         ));
         assert!(matches!(
-            serial.mmio_write(3, &data),
+            serial.mmio_write(0, 3, &data),
             IoResult::Err(IoError::UnalignedAccess)
         ));
 
-        serial.mmio_write(Register::UARTDR.0 as u64, &data).unwrap();
         serial
-            .mmio_write(Register::UARTRSR.0 as u64, &data)
+            .mmio_write(0, Register::UARTDR.0 as u64, &data)
             .unwrap();
         serial
-            .mmio_write(Register::UARTECR.0 as u64, &data)
+            .mmio_write(0, Register::UARTRSR.0 as u64, &data)
+            .unwrap();
+        serial
+            .mmio_write(0, Register::UARTECR.0 as u64, &data)
             .unwrap();
         assert!(matches!(
-            serial.mmio_write(Register::UARTFR.0 as u64, &data),
+            serial.mmio_write(0, Register::UARTFR.0 as u64, &data),
             IoResult::Err(IoError::InvalidRegister)
         ));
         serial
-            .mmio_write(Register::UARTILPR.0 as u64, &data)
+            .mmio_write(0, Register::UARTILPR.0 as u64, &data)
             .unwrap();
         serial
-            .mmio_write(Register::UARTIBRD.0 as u64, &data)
+            .mmio_write(0, Register::UARTIBRD.0 as u64, &data)
             .unwrap();
         serial
-            .mmio_write(Register::UARTFBRD.0 as u64, &data)
+            .mmio_write(0, Register::UARTFBRD.0 as u64, &data)
             .unwrap();
         serial
-            .mmio_write(Register::UARTLCR_H.0 as u64, &data)
-            .unwrap();
-        serial.mmio_write(Register::UARTCR.0 as u64, &data).unwrap();
-        serial
-            .mmio_write(Register::UARTIFLS.0 as u64, &data)
+            .mmio_write(0, Register::UARTLCR_H.0 as u64, &data)
             .unwrap();
         serial
-            .mmio_write(Register::UARTIMSC.0 as u64, &data)
+            .mmio_write(0, Register::UARTCR.0 as u64, &data)
+            .unwrap();
+        serial
+            .mmio_write(0, Register::UARTIFLS.0 as u64, &data)
+            .unwrap();
+        serial
+            .mmio_write(0, Register::UARTIMSC.0 as u64, &data)
             .unwrap();
         assert!(matches!(
-            serial.mmio_write(Register::UARTRIS.0 as u64, &data),
+            serial.mmio_write(0, Register::UARTRIS.0 as u64, &data),
             IoResult::Err(IoError::InvalidRegister)
         ));
         assert!(matches!(
-            serial.mmio_write(Register::UARTMIS.0 as u64, &data),
+            serial.mmio_write(0, Register::UARTMIS.0 as u64, &data),
             IoResult::Err(IoError::InvalidRegister)
         ));
         serial
-            .mmio_write(Register::UARTICR.0 as u64, &data)
+            .mmio_write(0, Register::UARTICR.0 as u64, &data)
             .unwrap();
         serial
-            .mmio_write(Register::UARTDMACR.0 as u64, &data)
+            .mmio_write(0, Register::UARTDMACR.0 as u64, &data)
             .unwrap();
 
         assert!(matches!(
-            serial.mmio_write(Register::UARTPERIPHID0.0 as u64, &data),
+            serial.mmio_write(0, Register::UARTPERIPHID0.0 as u64, &data),
             IoResult::Err(IoError::InvalidRegister)
         ));
         assert!(matches!(
-            serial.mmio_write(Register::UARTPERIPHID1.0 as u64, &data),
+            serial.mmio_write(0, Register::UARTPERIPHID1.0 as u64, &data),
             IoResult::Err(IoError::InvalidRegister)
         ));
         assert!(matches!(
-            serial.mmio_write(Register::UARTPERIPHID2.0 as u64, &data),
+            serial.mmio_write(0, Register::UARTPERIPHID2.0 as u64, &data),
             IoResult::Err(IoError::InvalidRegister)
         ));
         assert!(matches!(
-            serial.mmio_write(Register::UARTPERIPHID3.0 as u64, &data),
+            serial.mmio_write(0, Register::UARTPERIPHID3.0 as u64, &data),
             IoResult::Err(IoError::InvalidRegister)
         ));
         assert!(matches!(
-            serial.mmio_write(Register::UARTPCELLID0.0 as u64, &data),
+            serial.mmio_write(0, Register::UARTPCELLID0.0 as u64, &data),
             IoResult::Err(IoError::InvalidRegister)
         ));
         assert!(matches!(
-            serial.mmio_write(Register::UARTPCELLID1.0 as u64, &data),
+            serial.mmio_write(0, Register::UARTPCELLID1.0 as u64, &data),
             IoResult::Err(IoError::InvalidRegister)
         ));
         assert!(matches!(
-            serial.mmio_write(Register::UARTPCELLID2.0 as u64, &data),
+            serial.mmio_write(0, Register::UARTPCELLID2.0 as u64, &data),
             IoResult::Err(IoError::InvalidRegister)
         ));
         assert!(matches!(
-            serial.mmio_write(Register::UARTPCELLID3.0 as u64, &data),
+            serial.mmio_write(0, Register::UARTPCELLID3.0 as u64, &data),
             IoResult::Err(IoError::InvalidRegister)
         ));
     }
@@ -1331,7 +1335,7 @@ mod tests {
     fn write(serial: &mut SerialPl011, r: Register, val: u16) {
         let mut data = vec![0; 2];
         data[..2].copy_from_slice(&val.to_ne_bytes());
-        serial.mmio_write(r.0 as u64, &data).unwrap();
+        serial.mmio_write(0, r.0 as u64, &data).unwrap();
     }
 
     #[test]

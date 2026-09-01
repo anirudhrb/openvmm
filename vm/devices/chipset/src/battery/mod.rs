@@ -249,7 +249,7 @@ impl MmioIntercept for BatteryDevice {
         }
     }
 
-    fn mmio_write(&mut self, address: u64, data: &[u8]) -> IoResult {
+    fn mmio_write(&mut self, _vp_index: u32, address: u64, data: &[u8]) -> IoResult {
         assert_eq!(address & !BATTERY_DEVICE_MMIO_REGION_MASK, self.base_addr);
         if let Ok(x) = data.try_into().map(u32::from_ne_bytes) {
             self.write_register(RegisterOffset(address & BATTERY_DEVICE_MMIO_REGION_MASK), x);
@@ -545,6 +545,7 @@ mod tests {
         // ensure that mmio_write clears the notify_bits
         let data: u32 = 0x2;
         let _ = battery.mmio_write(
+            0,
             battery.base_addr + RegisterOffset::BATTERY_ACPI_NOTIFY_CLEAR.0,
             &data.to_ne_bytes(),
         );
@@ -598,14 +599,14 @@ mod tests {
 
         // Test writing with a data size not equal to size_of::<u32>()
         let data = vec![0; size_of::<u32>() + 1];
-        match battery.mmio_write(battery.base_addr, &data) {
+        match battery.mmio_write(0, battery.base_addr, &data) {
             IoResult::Err(e) => assert!(matches!(e, IoError::InvalidAccessSize)),
             _ => panic!("Expected error, but got Ok"),
         }
 
         // Test writing with data that cannot be converted into a `u32`
         let data = vec![0; size_of::<u32>() - 1];
-        match battery.mmio_write(battery.base_addr, &data) {
+        match battery.mmio_write(0, battery.base_addr, &data) {
             IoResult::Err(e) => assert!(matches!(e, IoError::InvalidAccessSize)),
             _ => panic!("Expected error, but got Ok"),
         }

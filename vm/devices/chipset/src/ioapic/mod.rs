@@ -496,7 +496,7 @@ impl MmioIntercept for IoApicDevice {
         IoResult::Ok
     }
 
-    fn mmio_write(&mut self, address: u64, data: &[u8]) -> IoResult {
+    fn mmio_write(&mut self, _vp_index: u32, address: u64, data: &[u8]) -> IoResult {
         assert_eq!(
             address & !IOAPIC_DEVICE_MMIO_REGION_MASK,
             IOAPIC_DEVICE_MMIO_REGION_BASE_ADDRESS
