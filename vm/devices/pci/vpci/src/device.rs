@@ -1883,7 +1883,7 @@ mod tests {
         fn mmio_read(&mut self, _address: u64, _data: &mut [u8]) -> IoResult {
             IoResult::Ok
         }
-        fn mmio_write(&mut self, _address: u64, _data: &[u8]) -> IoResult {
+        fn mmio_write(&mut self, _vp_index: u32, _address: u64, _data: &[u8]) -> IoResult {
             IoResult::Ok
         }
     }
@@ -2229,7 +2229,7 @@ mod tests {
             IoResult::Ok
         }
 
-        fn mmio_write(&mut self, address: u64, data: &[u8]) -> IoResult {
+        fn mmio_write(&mut self, _vp_index: u32, address: u64, data: &[u8]) -> IoResult {
             if let Some((bar, offset)) = self.config_space.find_bar(address) {
                 write_as_u32_chunks(offset, data, |offset, request_type| match request_type {
                     ReadWriteRequestType::Write(value) => {
@@ -2269,7 +2269,7 @@ mod tests {
         let write_u32 = |address, value: u32| {
             assert!(
                 vm_chipset
-                    .mmio_write(address, &value.to_ne_bytes())
+                    .mmio_write(0, address, &value.to_ne_bytes())
                     .is_some()
             );
         };

@@ -193,7 +193,7 @@ impl Chipset {
             .lock()
             .supports_mmio()
             .expect("objects on the mmio bus support mmio")
-            .mmio_write(address, data);
+            .mmio_write(vp, address, data);
 
         self.handle_io_result(
             lookup,

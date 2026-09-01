@@ -165,14 +165,17 @@ impl MmioIntercept for ChipsetDeviceProxy {
         IoResult::Defer(token)
     }
 
-    fn mmio_write(&mut self, address: u64, data: &[u8]) -> IoResult {
+    fn mmio_write(&mut self, vp_index: u32, address: u64, data: &[u8]) -> IoResult {
         let (write, token) = defer_write();
         let id = self.in_flight_writes.insert(write);
-        self.req_send.send(DeviceRequest::MmioWrite(WriteRequest {
-            id,
-            address,
-            data: data.to_vec(),
-        }));
+        self.req_send.send(DeviceRequest::MmioWrite(
+            vp_index,
+            WriteRequest {
+                id,
+                address,
+                data: data.to_vec(),
+            },
+        ));
         IoResult::Defer(token)
     }
 }

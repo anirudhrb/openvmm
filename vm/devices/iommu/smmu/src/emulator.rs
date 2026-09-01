@@ -1339,7 +1339,7 @@ impl MmioIntercept for SmmuDevice {
         IoResult::Ok
     }
 
-    fn mmio_write(&mut self, addr: u64, data: &[u8]) -> IoResult {
+    fn mmio_write(&mut self, _vp_index: u32, addr: u64, data: &[u8]) -> IoResult {
         let offset = (addr - self.mmio_base) as u32;
 
         if offset >= 0x10000 {
@@ -1413,7 +1413,7 @@ mod tests {
     /// Helper to write a 32-bit register.
     fn write32(dev: &mut SmmuDevice, reg_offset: u16, value: u32) {
         let data = value.to_le_bytes();
-        let result = dev.mmio_write(TEST_MMIO_BASE + reg_offset as u64, &data);
+        let result = dev.mmio_write(0, TEST_MMIO_BASE + reg_offset as u64, &data);
         assert!(matches!(result, IoResult::Ok));
     }
 
@@ -1428,7 +1428,7 @@ mod tests {
     /// Helper to write a 64-bit register.
     fn write64(dev: &mut SmmuDevice, reg_offset: u16, value: u64) {
         let data = value.to_le_bytes();
-        let result = dev.mmio_write(TEST_MMIO_BASE + reg_offset as u64, &data);
+        let result = dev.mmio_write(0, TEST_MMIO_BASE + reg_offset as u64, &data);
         assert!(matches!(result, IoResult::Ok));
     }
 
@@ -1443,7 +1443,7 @@ mod tests {
     /// Helper to write a 32-bit page 1 register.
     fn write32_page1(dev: &mut SmmuDevice, abs_offset: u32, value: u32) {
         let data = value.to_le_bytes();
-        let result = dev.mmio_write(TEST_MMIO_BASE + abs_offset as u64, &data);
+        let result = dev.mmio_write(0, TEST_MMIO_BASE + abs_offset as u64, &data);
         assert!(matches!(result, IoResult::Ok));
     }
 
@@ -1458,7 +1458,7 @@ mod tests {
     /// Helper to write a 64-bit page 1 register.
     fn write64_page1(dev: &mut SmmuDevice, abs_offset: u32, value: u64) {
         let data = value.to_le_bytes();
-        let result = dev.mmio_write(TEST_MMIO_BASE + abs_offset as u64, &data);
+        let result = dev.mmio_write(0, TEST_MMIO_BASE + abs_offset as u64, &data);
         assert!(matches!(result, IoResult::Ok));
     }
 
@@ -1754,7 +1754,7 @@ mod tests {
         assert!(matches!(result, IoResult::Err(IoError::InvalidAccessSize)));
 
         // 1-byte write should fail.
-        let result = dev.mmio_write(TEST_MMIO_BASE, &[0u8]);
+        let result = dev.mmio_write(0, TEST_MMIO_BASE, &[0u8]);
         assert!(matches!(result, IoResult::Err(IoError::InvalidAccessSize)));
 
         // 3-byte read should fail.

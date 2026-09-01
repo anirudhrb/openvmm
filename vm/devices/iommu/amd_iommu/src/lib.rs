@@ -1713,7 +1713,7 @@ impl MmioIntercept for AmdIommuDevice {
         IoResult::Ok
     }
 
-    fn mmio_write(&mut self, addr: u64, data: &[u8]) -> IoResult {
+    fn mmio_write(&mut self, _vp_index: u32, addr: u64, data: &[u8]) -> IoResult {
         let offset = addr - self.mmio_base;
 
         match data.len() {
@@ -1810,7 +1810,7 @@ mod tests {
     /// Helper to write a 64-bit MMIO register.
     fn mmio_write64(dev: &mut AmdIommuDevice, offset: u64, value: u64) {
         let addr = dev.mmio_base + offset;
-        let _ = dev.mmio_write(addr, &value.to_le_bytes());
+        let _ = dev.mmio_write(0, addr, &value.to_le_bytes());
     }
 
     /// Helper to read a 32-bit MMIO value.
@@ -1824,7 +1824,7 @@ mod tests {
     /// Helper to write a 32-bit MMIO value.
     fn mmio_write32(dev: &mut AmdIommuDevice, offset: u64, value: u32) {
         let addr = dev.mmio_base + offset;
-        let _ = dev.mmio_write(addr, &value.to_le_bytes());
+        let _ = dev.mmio_write(0, addr, &value.to_le_bytes());
     }
 
     // =========================================================================

@@ -4206,7 +4206,12 @@ impl chipset_device::mmio::MmioIntercept for FallbackMmioDevice {
         chipset_device::io::IoResult::Ok
     }
 
-    fn mmio_write(&mut self, addr: u64, data: &[u8]) -> chipset_device::io::IoResult {
+    fn mmio_write(
+        &mut self,
+        _vp_index: u32,
+        addr: u64,
+        data: &[u8],
+    ) -> chipset_device::io::IoResult {
         if self.is_allowed(addr, data.len()) {
             if let Err(err) = self.mshv_hvcall.mmio_write(addr, data) {
                 tracelimit::error_ratelimited!(

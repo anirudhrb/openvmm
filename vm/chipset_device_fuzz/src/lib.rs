@@ -103,8 +103,8 @@ impl FuzzChipset {
         Some(())
     }
 
-    /// Dispatch a MMIO write to the given address.
-    fn mmio_write(&self, addr: u64, data: &[u8]) -> Option<()> {
+    /// Dispatch a MMIO write to the given address on behalf of `vp`.
+    fn mmio_write(&self, vp: u32, addr: u64, data: &[u8]) -> Option<()> {
         // devices might want to map/unmap ranges as part of a MMIO access,
         // so don't hold the range lock for any longer than we need to
         let dev = self.mmio_ranges.read().get(&addr)?.1.upgrade().unwrap();
@@ -112,7 +112,7 @@ impl FuzzChipset {
         let result = locked_dev
             .supports_mmio()
             .expect("objects on the mmio bus support mmio")
-            .mmio_write(addr, data);
+            .mmio_write(vp, addr, data);
         match result {
             IoResult::Ok => {}
             IoResult::Err(_) => {}
@@ -327,7 +327,8 @@ impl FuzzChipset {
                     ChipsetAction::MmioRead { addr, len }
                 } else {
                     let val = u.bytes(len)?.to_vec();
-                    ChipsetAction::MmioWrite { addr, val }
+                    let vp = u.arbitrary()?;
+                    ChipsetAction::MmioWrite { vp, addr, val }
                 }
             }
             ChipsetActionKind::PortIoRead | ChipsetActionKind::PortIoWrite => {
@@ -379,7 +380,7 @@ impl FuzzChipset {
         let mut buf = [0; 8];
         match action {
             ChipsetAction::MmioRead { addr, len } => self.mmio_read(addr, &mut buf[..len]),
-            ChipsetAction::MmioWrite { addr, val } => self.mmio_write(addr, &val),
+            ChipsetAction::MmioWrite { vp, addr, val } => self.mmio_write(vp, addr, &val),
             ChipsetAction::PortIoRead { addr, len } => self.pio_read(addr, &mut buf[..len]),
             ChipsetAction::PortIoWrite { addr, val } => self.pio_write(addr, &val),
             ChipsetAction::PciRead { bdf, offset } => self.pci_read(bdf, offset, &mut buf[..4]),
@@ -396,6 +397,7 @@ pub enum ChipsetAction {
         len: usize,
     },
     MmioWrite {
+        vp: u32,
         addr: u64,
         val: Vec<u8>,
     },

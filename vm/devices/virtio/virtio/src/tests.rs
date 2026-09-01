@@ -629,11 +629,11 @@ impl VirtioTestGuest {
 
         let mut device_status = VIRTIO_ACKNOWLEDGE as u8;
         dev.pci_device
-            .mmio_write(bar_address1 + 20, &device_status.to_le_bytes())
+            .mmio_write(0, bar_address1 + 20, &device_status.to_le_bytes())
             .unwrap();
         device_status = VIRTIO_DRIVER as u8;
         dev.pci_device
-            .mmio_write(bar_address1 + 20, &device_status.to_le_bytes())
+            .mmio_write(0, bar_address1 + 20, &device_status.to_le_bytes())
             .unwrap();
         dev.write_u32(bar_address1 + 8, 0);
         dev.write_u32(bar_address1 + 12, driver_features.bank(0));
@@ -641,42 +641,42 @@ impl VirtioTestGuest {
         dev.write_u32(bar_address1 + 12, driver_features.bank(1));
         device_status = VIRTIO_FEATURES_OK as u8;
         dev.pci_device
-            .mmio_write(bar_address1 + 20, &device_status.to_le_bytes())
+            .mmio_write(0, bar_address1 + 20, &device_status.to_le_bytes())
             .unwrap();
         // setup config interrupt
         dev.pci_device
-            .mmio_write(bar_address2, &0_u64.to_le_bytes())
+            .mmio_write(0, bar_address2, &0_u64.to_le_bytes())
             .unwrap(); // vector
         dev.pci_device
-            .mmio_write(bar_address2 + 8, &0_u32.to_le_bytes())
+            .mmio_write(0, bar_address2 + 8, &0_u32.to_le_bytes())
             .unwrap(); // data
         dev.pci_device
-            .mmio_write(bar_address2 + 12, &0_u32.to_le_bytes())
+            .mmio_write(0, bar_address2 + 12, &0_u32.to_le_bytes())
             .unwrap();
         for i in 0..self.num_queues {
             let queue_index = i;
             dev.pci_device
-                .mmio_write(bar_address1 + 22, &queue_index.to_le_bytes())
+                .mmio_write(0, bar_address1 + 22, &queue_index.to_le_bytes())
                 .unwrap();
             dev.pci_device
-                .mmio_write(bar_address1 + 24, &self.queue_size.to_le_bytes())
+                .mmio_write(0, bar_address1 + 24, &self.queue_size.to_le_bytes())
                 .unwrap();
             // setup MSI information for the queue
             let msix_vector = queue_index + 1;
             let address = bar_address2 + 0x10 * msix_vector as u64;
             dev.pci_device
-                .mmio_write(address, &(msix_vector as u64).to_le_bytes())
+                .mmio_write(0, address, &(msix_vector as u64).to_le_bytes())
                 .unwrap();
             let address = bar_address2 + 0x10 * msix_vector as u64 + 8;
             dev.pci_device
-                .mmio_write(address, &0_u32.to_le_bytes())
+                .mmio_write(0, address, &0_u32.to_le_bytes())
                 .unwrap();
             let address = bar_address2 + 0x10 * msix_vector as u64 + 12;
             dev.pci_device
-                .mmio_write(address, &0_u32.to_le_bytes())
+                .mmio_write(0, address, &0_u32.to_le_bytes())
                 .unwrap();
             dev.pci_device
-                .mmio_write(bar_address1 + 26, &msix_vector.to_le_bytes())
+                .mmio_write(0, bar_address1 + 26, &msix_vector.to_le_bytes())
                 .unwrap();
             // setup queue addresses
             let desc_addr = self.get_queue_descriptor_base_address(queue_index);
@@ -691,7 +691,7 @@ impl VirtioTestGuest {
             // enable the queue
             let enabled: u16 = 1;
             dev.pci_device
-                .mmio_write(bar_address1 + 28, &enabled.to_le_bytes())
+                .mmio_write(0, bar_address1 + 28, &enabled.to_le_bytes())
                 .unwrap();
         }
         // enable all device MSI interrupts
@@ -1539,7 +1539,7 @@ impl VirtioPciTestDevice {
 
     fn write_u32(&mut self, address: u64, value: u32) {
         self.pci_device
-            .mmio_write(address, &value.to_ne_bytes())
+            .mmio_write(0, address, &value.to_ne_bytes())
             .unwrap();
     }
 }
@@ -2464,7 +2464,7 @@ async fn verify_pci_registers(driver: DefaultDriver) {
     let queue_index: u16 = 1;
     pci_test_device
         .pci_device
-        .mmio_write(bar_address1 + 22, &queue_index.to_le_bytes())
+        .mmio_write(0, bar_address1 + 22, &queue_index.to_le_bytes())
         .unwrap();
     assert_eq!(pci_test_device.read_u32(bar_address1 + 20), 1 << 16);
     // current queue size and msix vector
@@ -3117,7 +3117,7 @@ async fn verify_packed_multi_queue(driver: DefaultDriver) {
 fn take_mmio_interrupt_status(dev: &mut VirtioMmioDevice, mask: u32) -> u32 {
     let mut v = [0; 4];
     dev.mmio_read(96, &mut v).unwrap();
-    dev.mmio_write(100, &mask.to_ne_bytes()).unwrap();
+    dev.mmio_write(0, 100, &mask.to_ne_bytes()).unwrap();
     u32::from_ne_bytes(v)
 }
 
@@ -3503,43 +3503,46 @@ async fn verify_enable_failure_pci_does_not_set_driver_ok(_driver: DefaultDriver
     // Drive through ACKNOWLEDGE -> DRIVER -> FEATURES_OK
     let mut buf = [0u8; 1];
     buf[0] = VIRTIO_ACKNOWLEDGE as u8;
-    dev.mmio_write(bar_address1 + 20, &buf).unwrap();
+    dev.mmio_write(0, bar_address1 + 20, &buf).unwrap();
     buf[0] = VIRTIO_DRIVER as u8;
-    dev.mmio_write(bar_address1 + 20, &buf).unwrap();
+    dev.mmio_write(0, bar_address1 + 20, &buf).unwrap();
     // Select features
     let mut val;
     val = 0u32.to_le_bytes();
-    dev.mmio_write(bar_address1 + 8, &val).unwrap();
+    dev.mmio_write(0, bar_address1 + 8, &val).unwrap();
     val = 2u32.to_le_bytes();
-    dev.mmio_write(bar_address1 + 12, &val).unwrap();
+    dev.mmio_write(0, bar_address1 + 12, &val).unwrap();
     val = 1u32.to_le_bytes();
-    dev.mmio_write(bar_address1 + 8, &val).unwrap();
+    dev.mmio_write(0, bar_address1 + 8, &val).unwrap();
     val = VIRTIO_F_VERSION_1.to_le_bytes();
-    dev.mmio_write(bar_address1 + 12, &val).unwrap();
+    dev.mmio_write(0, bar_address1 + 12, &val).unwrap();
     buf[0] = VIRTIO_FEATURES_OK as u8;
-    dev.mmio_write(bar_address1 + 20, &buf).unwrap();
+    dev.mmio_write(0, bar_address1 + 20, &buf).unwrap();
 
     // Set up queue 0
-    dev.mmio_write(bar_address1 + 22, &0u16.to_le_bytes())
+    dev.mmio_write(0, bar_address1 + 22, &0u16.to_le_bytes())
         .unwrap(); // queue select
-    dev.mmio_write(bar_address1 + 24, &16u16.to_le_bytes())
+    dev.mmio_write(0, bar_address1 + 24, &16u16.to_le_bytes())
         .unwrap(); // queue size
     // Set up MSI for the queue
-    dev.mmio_write(bar_address2, &0u64.to_le_bytes()).unwrap();
-    dev.mmio_write(bar_address2 + 8, &0u32.to_le_bytes())
+    dev.mmio_write(0, bar_address2, &0u64.to_le_bytes())
         .unwrap();
-    dev.mmio_write(bar_address2 + 12, &0u32.to_le_bytes())
+    dev.mmio_write(0, bar_address2 + 8, &0u32.to_le_bytes())
+        .unwrap();
+    dev.mmio_write(0, bar_address2 + 12, &0u32.to_le_bytes())
         .unwrap();
     let msix_vector: u16 = 1;
     let msix_addr = bar_address2 + 0x10 * msix_vector as u64;
-    dev.mmio_write(msix_addr, &(msix_vector as u64).to_le_bytes())
+    dev.mmio_write(0, msix_addr, &(msix_vector as u64).to_le_bytes())
         .unwrap();
-    dev.mmio_write(msix_addr + 8, &0u32.to_le_bytes()).unwrap();
-    dev.mmio_write(msix_addr + 12, &0u32.to_le_bytes()).unwrap();
-    dev.mmio_write(bar_address1 + 26, &msix_vector.to_le_bytes())
+    dev.mmio_write(0, msix_addr + 8, &0u32.to_le_bytes())
+        .unwrap();
+    dev.mmio_write(0, msix_addr + 12, &0u32.to_le_bytes())
+        .unwrap();
+    dev.mmio_write(0, bar_address1 + 26, &msix_vector.to_le_bytes())
         .unwrap();
     // Enable queue
-    dev.mmio_write(bar_address1 + 28, &1u16.to_le_bytes())
+    dev.mmio_write(0, bar_address1 + 28, &1u16.to_le_bytes())
         .unwrap();
     // Enable all MSI interrupts
     dev.pci_cfg_write(
@@ -4353,44 +4356,48 @@ impl PciTestTransport {
         // Status: ACKNOWLEDGE -> DRIVER
         let mut buf = [0u8; 1];
         buf[0] = VIRTIO_ACKNOWLEDGE as u8;
-        dev.mmio_write(bar_address + 20, &buf).unwrap();
+        dev.mmio_write(0, bar_address + 20, &buf).unwrap();
         buf[0] = VIRTIO_DRIVER as u8;
-        dev.mmio_write(bar_address + 20, &buf).unwrap();
+        dev.mmio_write(0, bar_address + 20, &buf).unwrap();
 
         // Features
-        dev.mmio_write(bar_address + 8, &0u32.to_le_bytes())
+        dev.mmio_write(0, bar_address + 8, &0u32.to_le_bytes())
             .unwrap();
-        dev.mmio_write(bar_address + 12, &2u32.to_le_bytes())
+        dev.mmio_write(0, bar_address + 12, &2u32.to_le_bytes())
             .unwrap();
-        dev.mmio_write(bar_address + 8, &1u32.to_le_bytes())
+        dev.mmio_write(0, bar_address + 8, &1u32.to_le_bytes())
             .unwrap();
-        dev.mmio_write(bar_address + 12, &VIRTIO_F_VERSION_1.to_le_bytes())
+        dev.mmio_write(0, bar_address + 12, &VIRTIO_F_VERSION_1.to_le_bytes())
             .unwrap();
 
         buf[0] = VIRTIO_FEATURES_OK as u8;
-        dev.mmio_write(bar_address + 20, &buf).unwrap();
+        dev.mmio_write(0, bar_address + 20, &buf).unwrap();
 
         // MSI config vector
-        dev.mmio_write(bar_address2, &0u64.to_le_bytes()).unwrap();
-        dev.mmio_write(bar_address2 + 8, &0u32.to_le_bytes())
+        dev.mmio_write(0, bar_address2, &0u64.to_le_bytes())
             .unwrap();
-        dev.mmio_write(bar_address2 + 12, &0u32.to_le_bytes())
+        dev.mmio_write(0, bar_address2 + 8, &0u32.to_le_bytes())
+            .unwrap();
+        dev.mmio_write(0, bar_address2 + 12, &0u32.to_le_bytes())
             .unwrap();
 
         // Set up queues
         for i in 0..num_queues {
-            dev.mmio_write(bar_address + 22, &i.to_le_bytes()).unwrap();
-            dev.mmio_write(bar_address + 24, &16u16.to_le_bytes())
+            dev.mmio_write(0, bar_address + 22, &i.to_le_bytes())
+                .unwrap();
+            dev.mmio_write(0, bar_address + 24, &16u16.to_le_bytes())
                 .unwrap();
             let msix_vector = i + 1;
             let msix_addr = bar_address2 + 0x10 * msix_vector as u64;
-            dev.mmio_write(msix_addr, &(msix_vector as u64).to_le_bytes())
+            dev.mmio_write(0, msix_addr, &(msix_vector as u64).to_le_bytes())
                 .unwrap();
-            dev.mmio_write(msix_addr + 8, &0u32.to_le_bytes()).unwrap();
-            dev.mmio_write(msix_addr + 12, &0u32.to_le_bytes()).unwrap();
-            dev.mmio_write(bar_address + 26, &msix_vector.to_le_bytes())
+            dev.mmio_write(0, msix_addr + 8, &0u32.to_le_bytes())
                 .unwrap();
-            dev.mmio_write(bar_address + 28, &1u16.to_le_bytes())
+            dev.mmio_write(0, msix_addr + 12, &0u32.to_le_bytes())
+                .unwrap();
+            dev.mmio_write(0, bar_address + 26, &msix_vector.to_le_bytes())
+                .unwrap();
+            dev.mmio_write(0, bar_address + 28, &1u16.to_le_bytes())
                 .unwrap();
         }
         dev.pci_cfg_write(
@@ -4614,50 +4621,62 @@ async fn pci_intx_line_deasserted_on_reset(driver: DefaultDriver) {
     .unwrap();
 
     // ACKNOWLEDGE -> DRIVER
-    dev.mmio_write(bar_address + 20, &[VIRTIO_ACKNOWLEDGE as u8])
+    dev.mmio_write(0, bar_address + 20, &[VIRTIO_ACKNOWLEDGE as u8])
         .unwrap();
-    dev.mmio_write(bar_address + 20, &[VIRTIO_DRIVER as u8])
+    dev.mmio_write(0, bar_address + 20, &[VIRTIO_DRIVER as u8])
         .unwrap();
 
     // Accept features
-    dev.mmio_write(bar_address + 8, &0u32.to_le_bytes())
+    dev.mmio_write(0, bar_address + 8, &0u32.to_le_bytes())
         .unwrap();
-    dev.mmio_write(bar_address + 12, &2u32.to_le_bytes())
+    dev.mmio_write(0, bar_address + 12, &2u32.to_le_bytes())
         .unwrap();
-    dev.mmio_write(bar_address + 8, &1u32.to_le_bytes())
+    dev.mmio_write(0, bar_address + 8, &1u32.to_le_bytes())
         .unwrap();
-    dev.mmio_write(bar_address + 12, &VIRTIO_F_VERSION_1.to_le_bytes())
+    dev.mmio_write(0, bar_address + 12, &VIRTIO_F_VERSION_1.to_le_bytes())
         .unwrap();
-    dev.mmio_write(bar_address + 20, &[VIRTIO_FEATURES_OK as u8])
+    dev.mmio_write(0, bar_address + 20, &[VIRTIO_FEATURES_OK as u8])
         .unwrap();
 
     // Set up queue 0 with addresses from test guest memory layout.
     // queue_select = 0 (write to high half of DEVICE_STATUS register)
-    dev.mmio_write(bar_address + 22, &0u16.to_le_bytes())
+    dev.mmio_write(0, bar_address + 22, &0u16.to_le_bytes())
         .unwrap();
     // queue_size = 2 (low half of QUEUE_SIZE register)
-    dev.mmio_write(bar_address + 24, &2u16.to_le_bytes())
+    dev.mmio_write(0, bar_address + 24, &2u16.to_le_bytes())
         .unwrap();
     // queue descriptor address
     let desc_addr = guest.get_queue_descriptor_base_address(0);
-    dev.mmio_write(bar_address + 32, &(desc_addr as u32).to_le_bytes())
+    dev.mmio_write(0, bar_address + 32, &(desc_addr as u32).to_le_bytes())
         .unwrap();
-    dev.mmio_write(bar_address + 36, &((desc_addr >> 32) as u32).to_le_bytes())
-        .unwrap();
+    dev.mmio_write(
+        0,
+        bar_address + 36,
+        &((desc_addr >> 32) as u32).to_le_bytes(),
+    )
+    .unwrap();
     // queue available address
     let avail_addr = guest.get_queue_available_base_address(0);
-    dev.mmio_write(bar_address + 40, &(avail_addr as u32).to_le_bytes())
+    dev.mmio_write(0, bar_address + 40, &(avail_addr as u32).to_le_bytes())
         .unwrap();
-    dev.mmio_write(bar_address + 44, &((avail_addr >> 32) as u32).to_le_bytes())
-        .unwrap();
+    dev.mmio_write(
+        0,
+        bar_address + 44,
+        &((avail_addr >> 32) as u32).to_le_bytes(),
+    )
+    .unwrap();
     // queue used address
     let used_addr = guest.get_queue_used_base_address(0);
-    dev.mmio_write(bar_address + 48, &(used_addr as u32).to_le_bytes())
+    dev.mmio_write(0, bar_address + 48, &(used_addr as u32).to_le_bytes())
         .unwrap();
-    dev.mmio_write(bar_address + 52, &((used_addr >> 32) as u32).to_le_bytes())
-        .unwrap();
+    dev.mmio_write(
+        0,
+        bar_address + 52,
+        &((used_addr >> 32) as u32).to_le_bytes(),
+    )
+    .unwrap();
     // enable queue
-    dev.mmio_write(bar_address + 28, &1u16.to_le_bytes())
+    dev.mmio_write(0, bar_address + 28, &1u16.to_le_bytes())
         .unwrap();
 
     // DRIVER_OK — starts the queue worker (use write_u32 to bypass deferred IO)
@@ -4668,7 +4687,7 @@ async fn pci_intx_line_deasserted_on_reset(driver: DefaultDriver) {
 
     // Add a buffer to the avail ring and notify the device to process it.
     guest.add_to_avail_queue(0);
-    dev.mmio_write(bar_address + 0x38, &0u32.to_le_bytes())
+    dev.mmio_write(0, bar_address + 0x38, &0u32.to_le_bytes())
         .unwrap();
 
     // Wait for the queue worker to process the buffer and fire the IntX interrupt.

@@ -79,7 +79,7 @@ impl super::MemoryAccess for BusWrapper {
         self.0
             .supports_mmio()
             .unwrap()
-            .mmio_write(addr, value)
+            .mmio_write(0, addr, value)
             .unwrap();
     }
 }

@@ -124,7 +124,7 @@ impl MmioIntercept for VgaDevice {
         IoResult::Ok
     }
 
-    fn mmio_write(&mut self, addr: u64, data: &[u8]) -> IoResult {
+    fn mmio_write(&mut self, _vp_index: u32, addr: u64, data: &[u8]) -> IoResult {
         self.emu.notify_mmio_write(addr, data);
         IoResult::Ok
     }

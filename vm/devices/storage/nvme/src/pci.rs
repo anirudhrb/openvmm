@@ -472,7 +472,7 @@ impl MmioIntercept for NvmeController {
         }
     }
 
-    fn mmio_write(&mut self, addr: u64, data: &[u8]) -> IoResult {
+    fn mmio_write(&mut self, _vp_index: u32, addr: u64, data: &[u8]) -> IoResult {
         match self.cfg_space.find_bar(addr) {
             Some((0, offset)) => self.write_bar0(offset, data),
             Some((4, offset)) => {

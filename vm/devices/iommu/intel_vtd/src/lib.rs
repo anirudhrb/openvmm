@@ -1708,7 +1708,7 @@ impl MmioIntercept for IntelVtdDevice {
         IoResult::Ok
     }
 
-    fn mmio_write(&mut self, addr: u64, data: &[u8]) -> IoResult {
+    fn mmio_write(&mut self, _vp_index: u32, addr: u64, data: &[u8]) -> IoResult {
         let offset = addr - self.mmio_base;
 
         match data.len() {
@@ -1834,7 +1834,7 @@ mod tests {
     /// Helper to write a 32-bit register.
     fn write32(dev: &mut IntelVtdDevice, reg_offset: u16, value: u32) {
         let data = value.to_le_bytes();
-        let result = dev.mmio_write(TEST_MMIO_BASE + reg_offset as u64, &data);
+        let result = dev.mmio_write(0, TEST_MMIO_BASE + reg_offset as u64, &data);
         assert!(matches!(result, IoResult::Ok));
     }
 
@@ -1849,7 +1849,7 @@ mod tests {
     /// Helper to write a 64-bit register.
     fn write64(dev: &mut IntelVtdDevice, reg_offset: u16, value: u64) {
         let data = value.to_le_bytes();
-        let result = dev.mmio_write(TEST_MMIO_BASE + reg_offset as u64, &data);
+        let result = dev.mmio_write(0, TEST_MMIO_BASE + reg_offset as u64, &data);
         assert!(matches!(result, IoResult::Ok));
     }
 

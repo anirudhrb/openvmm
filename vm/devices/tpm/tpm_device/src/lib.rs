@@ -1466,7 +1466,7 @@ impl MmioIntercept for Tpm {
         IoResult::Ok
     }
 
-    fn mmio_write(&mut self, address: u64, data: &[u8]) -> IoResult {
+    fn mmio_write(&mut self, _vp_index: u32, address: u64, data: &[u8]) -> IoResult {
         if self.register_layout == TpmRegisterLayout::Mmio
             && (address == TPM_DEVICE_MMIO_PORT_CONTROL || address == TPM_DEVICE_MMIO_PORT_DATA)
             && data.len() == 4

@@ -1714,7 +1714,7 @@ impl MmioIntercept for VfioAssignedPciDevice {
         IoResult::Ok
     }
 
-    fn mmio_write(&mut self, addr: u64, data: &[u8]) -> IoResult {
+    fn mmio_write(&mut self, _vp_index: u32, addr: u64, data: &[u8]) -> IoResult {
         if let Some((bar, offset)) = self.active_bars.find(addr) {
             // Check if this access falls in the MSI-X table or PBA.
             if let Some(emu_offset) = self.msix_emulator_offset(bar, offset) {

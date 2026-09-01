@@ -827,7 +827,7 @@ impl MmioIntercept for PcatBiosDevice {
         IoResult::Ok
     }
 
-    fn mmio_write(&mut self, addr: u64, _data: &[u8]) -> IoResult {
+    fn mmio_write(&mut self, _vp_index: u32, addr: u64, _data: &[u8]) -> IoResult {
         match addr {
             0xf5bea | 0xf5bfa => {
                 // There is a bug in the firmware's throttle_getchar_FAR

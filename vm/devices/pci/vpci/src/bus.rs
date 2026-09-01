@@ -254,7 +254,7 @@ impl MmioIntercept for VpciBusDevice {
         IoResult::Ok
     }
 
-    fn mmio_write(&mut self, addr: u64, data: &[u8]) -> IoResult {
+    fn mmio_write(&mut self, _vp_index: u32, addr: u64, data: &[u8]) -> IoResult {
         tracing::trace!(addr, "VPCI bus MMIO write");
 
         // Remove vtom, as the guest may access it with or without set.
@@ -583,7 +583,7 @@ mod tests {
         let write_addr = BASE_ADDR + protocol::MMIO_PAGE_CONFIG_SPACE + OFFSET_CMD_REG;
         let result = bus
             .lock()
-            .mmio_write(write_addr, &0xdeadbeefu32.to_ne_bytes());
+            .mmio_write(0, write_addr, &0xdeadbeefu32.to_ne_bytes());
         assert!(matches!(result, IoResult::Ok));
 
         // Enable write deferral on the inner device now that probing is done.
@@ -595,7 +595,7 @@ mod tests {
         let write_addr = BASE_ADDR + protocol::MMIO_PAGE_CONFIG_SPACE + OFFSET_CMD_REG;
         let result = bus
             .lock()
-            .mmio_write(write_addr, &0xdeadbeefu32.to_ne_bytes());
+            .mmio_write(0, write_addr, &0xdeadbeefu32.to_ne_bytes());
         assert!(matches!(result, IoResult::Defer(_)));
 
         // Spawn a task that drives poll_device to simulate the chipset state unit.
@@ -638,7 +638,7 @@ mod tests {
         const MULTI_OFFSET: u64 = 8;
         let multi_write_addr = BASE_ADDR + protocol::MMIO_PAGE_CONFIG_SPACE + MULTI_OFFSET;
         let writes_before = device.lock().writes.len();
-        let multi_result = bus.lock().mmio_write(multi_write_addr, &[0xaa; 12]);
+        let multi_result = bus.lock().mmio_write(0, multi_write_addr, &[0xaa; 12]);
         assert!(
             matches!(multi_result, IoResult::Err(IoError::InvalidAccessSize)),
             "multi-DWORD write should be rejected"
@@ -703,7 +703,7 @@ mod tests {
 
         device.lock().start_deferring_reads(0x1122_3344);
         let write_addr = BASE_ADDR + protocol::MMIO_PAGE_CONFIG_SPACE + WRITE_OFFSET;
-        let write_result = bus.lock().mmio_write(write_addr, &[0xaa]);
+        let write_result = bus.lock().mmio_write(0, write_addr, &[0xaa]);
         assert!(matches!(write_result, IoResult::Ok));
     }
 
@@ -734,6 +734,7 @@ mod tests {
 
         rig.device.lock().fail_deferred_writes(IoError::NoResponse);
         let write_result = rig.bus.lock().mmio_write(
+            0,
             VpciTestRig::config_addr(WRITE_OFFSET),
             &0xaabb_ccddu32.to_ne_bytes(),
         );
@@ -756,7 +757,7 @@ mod tests {
 
         rig.bus
             .lock()
-            .mmio_write(VpciTestRig::slot_addr(), &1u32.to_ne_bytes())
+            .mmio_write(0, VpciTestRig::slot_addr(), &1u32.to_ne_bytes())
             .unwrap();
 
         let mut read_data = [0; 4];
@@ -768,7 +769,11 @@ mod tests {
 
         rig.bus
             .lock()
-            .mmio_write(VpciTestRig::config_addr(0), &0xaabb_ccddu32.to_ne_bytes())
+            .mmio_write(
+                0,
+                VpciTestRig::config_addr(0),
+                &0xaabb_ccddu32.to_ne_bytes(),
+            )
             .unwrap();
         assert!(rig.device.lock().pending_read.is_none());
         assert!(rig.device.lock().pending_write.is_none());

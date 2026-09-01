@@ -124,10 +124,10 @@ impl<T: PciConfigSpace + MmioIntercept, U: DmaClient> EmulatedDevice<T, U> {
         // Enable MSIX.
         for i in 0u64..64 {
             device
-                .mmio_write((0x1 << 32) + i * 16, &i.to_ne_bytes())
+                .mmio_write(0, (0x1 << 32) + i * 16, &i.to_ne_bytes())
                 .unwrap();
             device
-                .mmio_write((0x1 << 32) + i * 16 + 12, &0u32.to_ne_bytes())
+                .mmio_write(0, (0x1 << 32) + i * 16 + 12, &0u32.to_ne_bytes())
                 .unwrap();
         }
         device
@@ -224,14 +224,14 @@ impl<T: MmioIntercept + Send> DeviceRegisterIo for Mapping<T> {
     fn write_u32(&self, offset: usize, data: u32) {
         self.device
             .lock()
-            .mmio_write(self.addr + offset as u64, &data.to_ne_bytes())
+            .mmio_write(0, self.addr + offset as u64, &data.to_ne_bytes())
             .unwrap();
     }
 
     fn write_u64(&self, offset: usize, data: u64) {
         self.device
             .lock()
-            .mmio_write(self.addr + offset as u64, &data.to_ne_bytes())
+            .mmio_write(0, self.addr + offset as u64, &data.to_ne_bytes())
             .unwrap();
     }
 }

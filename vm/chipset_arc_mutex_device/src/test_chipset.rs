@@ -130,8 +130,8 @@ impl TestChipset {
         Some(())
     }
 
-    /// Dispatch a MMIO write to the given address.
-    pub fn mmio_write(&self, addr: u64, data: &[u8]) -> Option<()> {
+    /// Dispatch a MMIO write to the given address on behalf of `vp`.
+    pub fn mmio_write(&self, vp: u32, addr: u64, data: &[u8]) -> Option<()> {
         let dev = self.mmio_ranges.read().get(&addr)?.1.upgrade()?;
         // devices might want to map/unmap ranges as part of a MMIO access,
         // so don't hold the range lock for any longer than we need to
@@ -139,7 +139,7 @@ impl TestChipset {
             .lock()
             .supports_mmio()
             .expect("objects on the mmio bus support mmio")
-            .mmio_write(addr, data);
+            .mmio_write(vp, addr, data);
         Some(())
     }
 }
@@ -225,7 +225,7 @@ mod tests {
                 IoResult::Ok
             }
 
-            fn mmio_write(&mut self, _: u64, _: &[u8]) -> IoResult {
+            fn mmio_write(&mut self, _: u32, _: u64, _: &[u8]) -> IoResult {
                 IoResult::Ok
             }
 
