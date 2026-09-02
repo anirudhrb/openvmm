@@ -20,14 +20,14 @@
 //!   OpenVMM's [`ChipsetDevice`](chipset_device::ChipsetDevice) model.
 //! * **Data plane — the hypervisor.** Actually marking an LPI pending on a
 //!   vCPU, and programming the physical ITS for assigned devices. This crate
-//!   only describes what the data plane must do, through [`ItsDataPlane`].
+//!   only describes what the data plane must do, through
+//!   [`ItsDataPlane`](vmcore::its::ItsDataPlane); `virt_mshv` implements that
+//!   for the Microsoft hypervisor.
 
 #![forbid(unsafe_code)]
 
-mod data_plane;
 mod device;
 mod env;
 
-pub use data_plane::ItsDataPlane;
 pub use device::GicItsDevice;
 pub use device::MMIO_REGION_SIZE;

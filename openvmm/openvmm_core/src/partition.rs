@@ -82,6 +82,11 @@ pub trait HvlitePartition: Inspect + Send + Sync + RequestYield {
     #[cfg(guest_arch = "aarch64")]
     fn control_gic(&self, vtl: Vtl) -> Arc<dyn virt::irqcon::ControlGic>;
 
+    /// Gets the interface for programming LPI delivery on behalf of an
+    /// emulated ITS, if this backend supports it.
+    #[cfg(guest_arch = "aarch64")]
+    fn its_data_plane(&self) -> Option<Arc<dyn vmcore::its::ItsDataPlane>>;
+
     /// Gets the [`DoorbellRegistration`] interface for a particular VTL.
     fn into_doorbell_registration(
         self: Arc<Self>,
@@ -214,6 +219,11 @@ where
     #[cfg(guest_arch = "aarch64")]
     fn control_gic(&self, vtl: Vtl) -> Arc<dyn virt::irqcon::ControlGic> {
         self.control_gic(vtl)
+    }
+
+    #[cfg(guest_arch = "aarch64")]
+    fn its_data_plane(&self) -> Option<Arc<dyn vmcore::its::ItsDataPlane>> {
+        ArchPartition::its_data_plane(self)
     }
 
     fn into_doorbell_registration(

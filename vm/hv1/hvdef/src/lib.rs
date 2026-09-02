@@ -768,6 +768,11 @@ open_enum! {
         HvCallUnpinGpaPageRanges = 0x0113,
         HvCallQuerySparseGpaPageHostVisibility = 0x011C,
 
+        // Virtual interrupt assignment. Arm64 only.
+        HvCallReserveVirtualInterrupt = 0x011D,
+        HvCallReleaseVirtualInterrupt = 0x011E,
+        HvCallSetVirtualInterruptTarget = 0x011F,
+
         // Extended hypercalls.
         HvExtCallQueryCapabilities = 0x8001,
 
@@ -1520,6 +1525,64 @@ pub mod hypercall {
         pub rsvd: u64,
         pub target_header: InterruptTarget,
     }
+
+    /// Input for `HvCallReserveVirtualInterrupt`.
+    ///
+    /// Reserving an LPI is what makes it assertable: the Arm64 LPI path of
+    /// `HvCallAssertVirtualInterrupt` rejects an interrupt that has not been
+    /// reserved. Reservation also fixes the target processor, so the assert
+    /// itself carries no destination.
+    ///
+    /// Arm64 only.
+    #[repr(C)]
+    #[derive(Debug, Copy, Clone, IntoBytes, Immutable, KnownLayout, FromBytes)]
+    pub struct ReserveVirtualInterrupt {
+        pub partition_id: u64,
+        pub interrupt_id: u32,
+        pub vp_index: u32,
+        pub vtl: u8,
+        pub rsvd0: u8,
+        pub rsvd1: u16,
+        pub rsvd2: u32,
+    }
+
+    /// Input for `HvCallReleaseVirtualInterrupt`.
+    ///
+    /// Arm64 only.
+    #[repr(C)]
+    #[derive(Debug, Copy, Clone, IntoBytes, Immutable, KnownLayout, FromBytes)]
+    pub struct ReleaseVirtualInterrupt {
+        pub partition_id: u64,
+        pub interrupt_id: u32,
+        pub vtl: u8,
+        pub rsvd0: u8,
+        pub rsvd1: u16,
+    }
+
+    /// Input for `HvCallSetVirtualInterruptTarget`.
+    ///
+    /// Retargets an already-reserved interrupt at a different processor.
+    ///
+    /// Arm64 only.
+    #[repr(C)]
+    #[derive(Debug, Copy, Clone, IntoBytes, Immutable, KnownLayout, FromBytes)]
+    pub struct SetVirtualInterruptTarget {
+        pub partition_id: u64,
+        pub interrupt_id: u32,
+        pub vp_index: u32,
+        pub vtl: u8,
+        pub rsvd0: u8,
+        pub rsvd1: u16,
+        pub rsvd2: u32,
+    }
+
+    // The hypervisor declares these with `HV_CALL_ATTRIBUTES`, which aligns
+    // them to 8 bytes; the trailing reserved words above make that explicit
+    // rather than leaving it to the compiler. A mismatch would surface only as
+    // `HV_STATUS_INVALID_HYPERCALL_INPUT` from real hardware, so check it here.
+    static_assertions::const_assert_eq!(size_of::<ReserveVirtualInterrupt>(), 24);
+    static_assertions::const_assert_eq!(size_of::<ReleaseVirtualInterrupt>(), 16);
+    static_assertions::const_assert_eq!(size_of::<SetVirtualInterruptTarget>(), 24);
 
     #[bitfield(u8)]
     #[derive(IntoBytes, Immutable, KnownLayout, FromBytes)]
@@ -2957,6 +3020,17 @@ registers! {
         MairEl1 = 0x0004000b,
         VbarEl1 = 0x0004000c,
         ElrEl1 = 0x00040015,
+
+        /// Notifies the hypervisor that the guest issued an ITS `INV` or
+        /// `INVALL`, so that it re-reads the guest's LPI configuration table.
+        ///
+        /// The value is the LPI interrupt ID to refresh, or `!0`
+        /// (`GIC_INVALID_INTID`) to refresh every LPI. There is no bitfield;
+        /// the two cases are distinguished purely by that sentinel.
+        ///
+        /// The write is serviced through the named processor's redistributor,
+        /// so it must target a processor that has enabled LPIs.
+        ItsInv = 0x00063001,
     }
 }
 

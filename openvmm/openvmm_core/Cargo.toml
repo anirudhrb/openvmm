@@ -67,6 +67,7 @@ framebuffer.workspace = true
 get_resources.workspace = true
 ide.workspace = true
 floppy.workspace = true
+gic_its.workspace = true
 input_core.workspace = true
 missing_dev.workspace = true
 pci_bus.workspace = true

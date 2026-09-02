@@ -47,8 +47,31 @@ impl SignalMsi for ItsSignalMsi {
         let Some(bdf) = devid else {
             return;
         };
-        let its_devid = (self.segment as u32) << 16 | (bdf & 0xFFFF);
-        self.inner.signal_msi(Some(its_devid), address, data);
+        self.inner
+            .signal_msi(Some(self.its_devid(bdf)), address, data);
+    }
+
+    fn enable_msi(&self, devid: Option<u32>, address: u64, data: u32) {
+        let Some(bdf) = devid else {
+            return;
+        };
+        self.inner
+            .enable_msi(Some(self.its_devid(bdf)), address, data);
+    }
+
+    fn disable_msi(&self, devid: Option<u32>, address: u64, data: u32) {
+        let Some(bdf) = devid else {
+            return;
+        };
+        self.inner
+            .disable_msi(Some(self.its_devid(bdf)), address, data);
+    }
+}
+
+impl ItsSignalMsi {
+    /// Composes the ITS device ID from this wrapper's segment and a BDF.
+    fn its_devid(&self, bdf: u32) -> u32 {
+        (self.segment as u32) << 16 | (bdf & 0xFFFF)
     }
 }
 

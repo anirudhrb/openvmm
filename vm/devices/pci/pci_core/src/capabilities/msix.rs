@@ -187,6 +187,10 @@ impl MsiInterrupt {
         state.data = data;
         state.enabled = true;
 
+        // Tell the backend the interrupt is live. An ITS needs this to reserve
+        // the LPI before it can ever be asserted.
+        state.target.enable_msi(address, data);
+
         // Program the kernel route if present.
         if let Some(route) = &state.route {
             state.enable_route(route);
@@ -201,6 +205,7 @@ impl MsiInterrupt {
     pub fn disable(&self) {
         let mut state = self.0.lock();
         state.enabled = false;
+        state.target.disable_msi(state.address, state.data);
         if let Some(route) = &state.route {
             route.disable();
         }

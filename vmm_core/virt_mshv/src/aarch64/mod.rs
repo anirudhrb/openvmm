@@ -3,6 +3,8 @@
 
 //! aarch64-specific implementation of the mshv hypervisor backend.
 
+mod its;
+
 use crate::Error;
 use crate::ErrorInner;
 use crate::LinuxMshv;
@@ -30,6 +32,7 @@ use hvdef::HvMessageType;
 use hvdef::HvPartitionPropertyCode;
 use hvdef::Vtl;
 use hvdef::hypercall::HvRegisterAssoc;
+use mshv_ioctls::MshvError;
 use pal::unix::pthread::Pthread;
 use pci_core::msi::SignalMsi;
 use std::sync::Arc;
@@ -58,7 +61,12 @@ impl virt::Hypervisor for LinuxMshv {
             platform_gsiv: None,
             // TODO: query from hypervisor
             supports_gic_v3: true,
-            supports_its: false,
+            // The ITS control plane is emulated in this VMM and the data plane
+            // is programmed through hypercalls, so support does not depend on
+            // anything the hypervisor advertises. It cannot be probed anyway:
+            // this runs before any partition exists, and the LPI configuration
+            // is a partition property.
+            supports_its: true,
             device_assignment_msi_iova: virt::DeviceAssignmentMsiIova::Configurable,
         }
     }
@@ -274,10 +282,19 @@ impl virt::Aarch64Partition for MshvPartition {
     fn control_gic(&self, _vtl: Vtl) -> Arc<dyn virt::irqcon::ControlGic> {
         self.inner.clone()
     }
+
+    fn its_data_plane(&self) -> Option<Arc<dyn vmcore::its::ItsDataPlane>> {
+        Some(Arc::new(its::MshvItsDataPlane::new(self.inner.clone())))
+    }
 }
 
-impl virt::irqcon::ControlGic for MshvPartitionInner {
-    fn set_spi_irq(&self, irq_id: u32, high: bool) {
+impl MshvPartitionInner {
+    /// Asserts or deasserts a virtual interrupt by GIC interrupt ID.
+    ///
+    /// The hypervisor dispatches on the interrupt ID itself, so this covers
+    /// both SPIs and LPIs. An LPI must have been reserved first, which also
+    /// fixes its target processor — hence no destination here.
+    fn assert_virtual_interrupt(&self, irq_id: u32, high: bool) -> Result<(), MshvError> {
         let input = hvdef::hypercall::AssertVirtualInterrupt {
             partition_id: 0,
             interrupt_control: HvInterruptControl::new()
@@ -296,7 +313,13 @@ impl virt::irqcon::ControlGic for MshvPartitionInner {
             in_ptr: std::ptr::addr_of!(input) as u64,
             ..Default::default()
         };
-        if let Err(e) = self.vmfd.hvcall(&mut args) {
+        self.vmfd.hvcall(&mut args)
+    }
+}
+
+impl virt::irqcon::ControlGic for MshvPartitionInner {
+    fn set_spi_irq(&self, irq_id: u32, high: bool) {
+        if let Err(e) = self.assert_virtual_interrupt(irq_id, high) {
             tracelimit::warn_ratelimited!(
                 irq_id,
                 high,

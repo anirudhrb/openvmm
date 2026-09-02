@@ -1420,6 +1420,39 @@ impl SignalMsi for SmmuSignalMsi {
             }
         }
     }
+
+    fn enable_msi(&self, devid: Option<u32>, address: u64, data: u32) {
+        // The address the guest programmed may be an IOVA, and a consumer such
+        // as the ITS validates it against the doorbell's real address, so
+        // translate here exactly as `signal_msi` does. A translation failure is
+        // not reported: it is not an interrupt being dropped, and the guest may
+        // legitimately program the table before the SMMU.
+        if let Some(address) = self.translate_msi_address(devid, address) {
+            self.inner.enable_msi(devid, address, data);
+        }
+    }
+
+    fn disable_msi(&self, devid: Option<u32>, address: u64, data: u32) {
+        if let Some(address) = self.translate_msi_address(devid, address) {
+            self.inner.disable_msi(devid, address, data);
+        }
+    }
+}
+
+impl SmmuSignalMsi {
+    /// Translates an MSI address for the configuration path, returning `None`
+    /// if the SMMU would not let the write through.
+    fn translate_msi_address(&self, devid: Option<u32>, address: u64) -> Option<u64> {
+        let bdf = devid?;
+        let sid = self.stream_id_base + (bdf & 0xFFFF);
+        match self.shared.translate(sid, address, true) {
+            TranslateResult::Bypass => Some(address),
+            TranslateResult::Translated(gpa) => Some(gpa),
+            TranslateResult::GlobalAbort | TranslateResult::Abort | TranslateResult::Fault(_) => {
+                None
+            }
+        }
+    }
 }
 
 /// An [`IrqFd`] wrapper that produces SMMU-translating irqfd routes.

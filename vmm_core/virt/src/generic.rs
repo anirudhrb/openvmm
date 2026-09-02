@@ -488,6 +488,15 @@ pub trait X86Partition: Partition {
 pub trait Aarch64Partition: Partition {
     /// Returns an interface for accessing the GIC interrupt controller for `vtl`.
     fn control_gic(&self, vtl: Vtl) -> Arc<dyn ControlGic>;
+
+    /// Returns an interface for programming LPI delivery on behalf of an
+    /// emulated ITS, if this backend supports it.
+    ///
+    /// Returns `None` for backends that cannot deliver LPIs, or that emulate
+    /// the ITS themselves.
+    fn its_data_plane(&self) -> Option<Arc<dyn vmcore::its::ItsDataPlane>> {
+        None
+    }
 }
 
 /// Extension trait for accepting initial pages.

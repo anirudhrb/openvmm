@@ -19,6 +19,29 @@ pub trait SignalMsi: Send + Sync {
     /// single-function); at the ITS wrapper layer it is the fully composed ITS
     /// device ID; backends that don't need it ignore it.
     fn signal_msi(&self, devid: Option<u32>, address: u64, data: u32);
+
+    /// Notifies that the guest has enabled this MSI, fixing its address and
+    /// data.
+    ///
+    /// Almost every backend delivers MSIs statelessly and wants nothing here,
+    /// hence the no-op default. It exists for the GICv3 ITS, which must know
+    /// which interrupts are live *before* they fire: an LPI has to be reserved
+    /// with the hypervisor before it can be asserted, and reserving happens on
+    /// the configuration path, not the interrupt path.
+    ///
+    /// Implementations must tolerate being called repeatedly for the same
+    /// interrupt, since a guest may mask and unmask a vector freely.
+    fn enable_msi(&self, devid: Option<u32>, address: u64, data: u32) {
+        let _ = (devid, address, data);
+    }
+
+    /// Notifies that the guest has disabled this MSI.
+    ///
+    /// See [`enable_msi`](Self::enable_msi). This reports only that the guest
+    /// masked the vector; it does not mean the interrupt has been torn down.
+    fn disable_msi(&self, devid: Option<u32>, address: u64, data: u32) {
+        let _ = (devid, address, data);
+    }
 }
 
 /// A kernel-mediated MSI interrupt route for a single vector.
@@ -360,9 +383,28 @@ impl MsiTarget {
         inner.signal_msi.signal_msi(Some(rid.into()), address, data);
     }
 
+    /// Notifies the backend that the guest enabled an MSI on this target,
+    /// resolving the requester ID the same way
+    /// [`signal_msi`](Self::signal_msi) does.
+    pub fn enable_msi(&self, address: u64, data: u32) {
+        let Some(resolved) = resolve_default_rid(&self.default_rid) else {
+            return;
+        };
+        let inner = self.inner.read();
+        inner.signal_msi.enable_msi(Some(resolved), address, data);
+    }
+
+    /// Notifies the backend that the guest disabled an MSI on this target.
+    pub fn disable_msi(&self, address: u64, data: u32) {
+        let Some(resolved) = resolve_default_rid(&self.default_rid) else {
+            return;
+        };
+        let inner = self.inner.read();
+        inner.signal_msi.disable_msi(Some(resolved), address, data);
+    }
+
     /// Creates a new kernel-mediated MSI route for direct interrupt
-    /// delivery.
-    ///
+    /// delivery.    ///
     /// The route inherits this target's default BDF source so that
     /// [`MsiRoute::enable`] resolves the BDF the same way
     /// [`signal_msi`](Self::signal_msi) does.

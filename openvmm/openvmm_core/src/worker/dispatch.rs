@@ -6,6 +6,7 @@ mod dump;
 mod ecam_config_access;
 mod intel_vtd_wiring;
 mod ioapic_iommu_wiring;
+mod its_wiring;
 mod pcie_topology;
 mod pcie_wiring;
 mod smmu_wiring;
@@ -822,6 +823,10 @@ struct LoadedVmInner {
     /// Instantiated IOMMU devices (ACPI configs + per-RC shared state),
     /// keyed by IOMMU type. `IommuDevices::None` when no IOMMU is configured.
     iommu_devices: IommuDevices,
+    /// MSI target for the emulated GICv3 ITS, when one is present. Retained so
+    /// that hot-added PCIe devices are wired to it too.
+    #[cfg(guest_arch = "aarch64")]
+    its_signal_msi: Option<Arc<dyn pci_core::msi::SignalMsi>>,
     /// IOAPIC PCIe Requester ID when x86 IOMMU interrupt remapping is active.
     /// For AMD this is threaded into IVRS at firmware-load time; for Intel
     /// the matching DMAR device scope is carried by the per-unit ACPI config.
@@ -2452,6 +2457,21 @@ impl InitializedVm {
             }
         };
 
+        // Instantiate the emulated GICv3 ITS, if the topology selected one.
+        // Devices reach it through the MSI target returned here rather than
+        // through the partition's own `SignalMsi`, because it needs the ITS
+        // device as well as the partition.
+        #[cfg(guest_arch = "aarch64")]
+        let its_signal_msi = match processor_topology.gic_msi() {
+            vm_topology::processor::aarch64::GicMsiController::Its(its) => its_wiring::setup_its(
+                its.its_base,
+                partition.its_data_plane(),
+                &chipset_builder,
+                &gm,
+            )?,
+            _ => None,
+        };
+
         // Instantiate an AMD IOMMU on each root complex listed in
         // --amd-iommu. Each IOMMU is an RCiEP at device 0, function 0 on
         // its root complex's start bus with a distinct MMIO base address.
@@ -2530,6 +2550,8 @@ impl InitializedVm {
                 partition: partition.as_ref(),
                 segment: deferred.segment,
                 processor_topology: &processor_topology,
+                #[cfg(guest_arch = "aarch64")]
+                its_signal_msi: its_signal_msi.clone(),
                 #[cfg(guest_arch = "x86_64")]
                 iommu,
             }
@@ -2548,6 +2570,9 @@ impl InitializedVm {
         // When the AMD IOMMU is enabled, per-device wrappers translate
         // IOVAs using the port's assigned bus range and remap MSIs using
         // the requester ID supplied by the PCI MSI path.
+
+        #[cfg(guest_arch = "aarch64")]
+        let its_signal_msi_ref = &its_signal_msi;
 
         try_join_all(cfg.pcie_devices.into_iter().map(|dev_cfg| {
             let chipset_builder = &chipset_builder;
@@ -2576,6 +2601,8 @@ impl InitializedVm {
                             partition: partition.as_ref(),
                             segment: pi.segment,
                             processor_topology,
+                            #[cfg(guest_arch = "aarch64")]
+                            its_signal_msi: its_signal_msi_ref.clone(),
                             #[cfg(guest_arch = "x86_64")]
                             iommu: x86_iommu_for_rc(iommu_devices, pi.rc_idx),
                         },
@@ -3084,6 +3111,8 @@ impl InitializedVm {
                 client_notify_send,
                 chipset: chipset.chipset.clone(),
                 iommu_devices,
+                #[cfg(guest_arch = "aarch64")]
+                its_signal_msi: its_signal_msi.clone(),
                 #[cfg(guest_arch = "x86_64")]
                 ioapic_iommu_rid,
                 pcie_host_bridges,
@@ -3788,6 +3817,8 @@ impl LoadedVm {
                                         partition: self.inner.partition.as_ref(),
                                         segment,
                                         processor_topology: &self.inner.processor_topology,
+                                        #[cfg(guest_arch = "aarch64")]
+                                        its_signal_msi: self.inner.its_signal_msi.clone(),
                                         #[cfg(guest_arch = "x86_64")]
                                         iommu: x86_iommu_for_rc(
                                             &self.inner.iommu_devices,
