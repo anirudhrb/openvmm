@@ -3,7 +3,6 @@
 
 //! The virtual ITS chipset device: MMIO dispatch, lifecycle, and diagnostics.
 
-use crate::data_plane::ItsDataPlane;
 use crate::env::GicItsEnv;
 use chipset_device::ChipsetDevice;
 use chipset_device::io::IoError;
@@ -15,6 +14,7 @@ use std::ops::RangeInclusive;
 use std::sync::Arc;
 use vits_core::ItsCore;
 use vmcore::device_state::ChangeDeviceState;
+use vmcore::its::ItsDataPlane;
 use vmcore::save_restore::RestoreError;
 use vmcore::save_restore::SaveError;
 use vmcore::save_restore::SaveRestore;
@@ -102,8 +102,32 @@ impl GicItsDevice {
         }
     }
 
-    /// Converts an absolute guest address into a window offset.
+    /// Starts reporting translation changes for an interrupt.
     ///
+    /// Call this when the guest enables an MSI-X vector. The ITS only tracks
+    /// interrupts it has been asked about, so an unsubscribed interrupt is
+    /// never programmed into the data plane and never delivered.
+    ///
+    /// Subscribing also re-resolves the interrupt immediately and reports its
+    /// current translation, so this is idempotent and safe to call on every
+    /// unmask: a mapping the guest programmed while the vector was masked is
+    /// picked up here.
+    pub fn subscribe_interrupt(&mut self, device_id: u32, event_id: u32) {
+        self.core.subscribe_interrupt(device_id, event_id);
+    }
+
+    /// Stops reporting translation changes for an interrupt.
+    ///
+    /// This does *not* tear the interrupt down. No `None` translation is
+    /// reported, so the data plane keeps whatever it holds until the guest
+    /// unmaps the interrupt through the ITS itself. Combined with the
+    /// re-resolve in [`subscribe_interrupt`](Self::subscribe_interrupt), that
+    /// makes a mask/unmask cycle self-correcting rather than destructive.
+    pub fn unsubscribe_interrupt(&mut self, device_id: u32, event_id: u32) {
+        self.core.unsubscribe_interrupt(device_id, event_id);
+    }
+
+    /// Converts an absolute guest address into a window offset.    ///
     /// The chipset only routes addresses inside the registered region, so this
     /// should never fail; it is fallible rather than a subtraction so that a
     /// routing bug cannot become an arithmetic panic.
@@ -221,7 +245,7 @@ impl MmioIntercept for GicItsDevice {
         IoResult::Ok
     }
 
-    fn mmio_write(&mut self, _vp_index: u32, addr: u64, data: &[u8]) -> IoResult {
+    fn mmio_write(&mut self, vp_index: u32, addr: u64, data: &[u8]) -> IoResult {
         let value = match data.len() {
             4 => u32::from_le_bytes(data.try_into().unwrap()) as u64,
             8 => u64::from_le_bytes(data.try_into().unwrap()),
@@ -233,7 +257,12 @@ impl MmioIntercept for GicItsDevice {
             return IoResult::Ok;
         };
 
+        // A write to GITS_CWRITER drains the command queue synchronously, and
+        // an INV or INVALL in that batch has to name a redistributor. Record
+        // the trapping processor so the environment can supply it.
+        self.core.env_mut().set_trapping_vp(vp_index);
         self.write_offset(offset, data.len() as u32, value);
+        self.core.env_mut().clear_trapping_vp();
 
         IoResult::Ok
     }
@@ -271,11 +300,12 @@ impl ChangeDeviceState for GicItsDevice {
         // translation cache, and the whole register file return to their
         // power-on values by construction.
         //
-        // DEVNOTE: once a real data plane is wired up, this must also tear down
-        // every outstanding binding, because a binding is ownership of an LPI
-        // INTID in the hypervisor. Dropping the bindings here without releasing
-        // them would leak that ownership across guest reboot, and the guest's
-        // next attempt to map the same INTID would fail.
+        // A binding is ownership of an LPI INTID in the hypervisor, and that
+        // ownership outlives the shadow tables being discarded here. Release
+        // the bindings before dropping the state that describes them, or the
+        // guest's next attempt to map the same INTIDs after reboot is refused.
+        programmer.reset();
+
         *core = ItsCore::new(GicItsEnv::new(guest_memory.clone(), programmer.clone()));
     }
 }
@@ -326,10 +356,8 @@ mod tests {
     use super::*;
     use parking_lot::Mutex;
     use test_with_tracing::test;
-    use vits_core::DeviceId;
-    use vits_core::EventId;
-    use vits_core::InvalidateTarget;
-    use vits_core::Translation;
+    use vmcore::its::ItsInvalidate;
+    use vmcore::its::ItsTranslation;
 
     const MMIO_BASE: u64 = 0xEFFC_0000;
     const GUEST_MEM_SIZE: usize = 0x4_0000;
@@ -345,29 +373,29 @@ mod tests {
     /// An [`ItsDataPlane`] that records what it was asked to do.
     #[derive(Default)]
     struct RecordingDataPlane {
-        retargets: Mutex<Vec<(DeviceId, EventId, Option<Translation>)>>,
-        invalidations: Mutex<Vec<InvalidateTarget>>,
-        asserts: Mutex<Vec<(DeviceId, EventId)>>,
+        retargets: Mutex<Vec<(u32, u32, Option<ItsTranslation>)>>,
+        invalidations: Mutex<Vec<(u32, ItsInvalidate)>>,
+        asserts: Mutex<Vec<(u32, u32)>>,
+        resets: Mutex<usize>,
     }
 
     impl ItsDataPlane for RecordingDataPlane {
-        fn retarget(
-            &self,
-            device_id: DeviceId,
-            event_id: EventId,
-            translation: Option<Translation>,
-        ) {
+        fn retarget(&self, device_id: u32, event_id: u32, translation: Option<ItsTranslation>) {
             self.retargets
                 .lock()
                 .push((device_id, event_id, translation));
         }
 
-        fn invalidate(&self, target: InvalidateTarget) {
-            self.invalidations.lock().push(target);
+        fn invalidate(&self, vp_index: u32, target: ItsInvalidate) {
+            self.invalidations.lock().push((vp_index, target));
         }
 
-        fn assert(&self, device_id: DeviceId, event_id: EventId) {
+        fn assert(&self, device_id: u32, event_id: u32) {
             self.asserts.lock().push((device_id, event_id));
+        }
+
+        fn reset(&self) {
+            *self.resets.lock() += 1;
         }
     }
 
@@ -412,13 +440,23 @@ mod tests {
         }
 
         fn write64(&mut self, offset: u32, value: u64) {
+            self.write64_from_vp(0, offset, value);
+        }
+
+        fn write64_from_vp(&mut self, vp_index: u32, offset: u32, value: u64) {
             self.dev
-                .mmio_write(0, MMIO_BASE + offset as u64, &value.to_le_bytes())
+                .mmio_write(vp_index, MMIO_BASE + offset as u64, &value.to_le_bytes())
                 .unwrap();
         }
 
         /// Writes a batch of commands to the queue and rings the doorbell.
         fn submit(&mut self, commands: &[[u64; 4]]) {
+            self.submit_from_vp(0, commands);
+        }
+
+        /// Writes a batch of commands and rings the doorbell from `vp_index`,
+        /// as a guest running its ITS driver on that processor would.
+        fn submit_from_vp(&mut self, vp_index: u32, commands: &[[u64; 4]]) {
             let read_index = self.read64(GITS_CREADR_OFFSET) / 32;
             for (i, command) in commands.iter().enumerate() {
                 let gpa = QUEUE_GPA + (read_index + i as u64) * 32;
@@ -428,7 +466,8 @@ mod tests {
                         .unwrap();
                 }
             }
-            self.write64(
+            self.write64_from_vp(
+                vp_index,
                 GITS_CWRITER_OFFSET,
                 (read_index + commands.len() as u64) * 32,
             );
@@ -618,16 +657,18 @@ mod tests {
         // All commands consumed, or the guest would spin waiting.
         assert_eq!(d.read64(GITS_CREADR_OFFSET), d.read64(GITS_CWRITER_OFFSET));
 
-        let expected = Translation {
-            processor_id: 3,
-            interrupt_id: 8192,
+        let expected = ItsTranslation {
+            vp_index: 3,
+            intid: 8192,
         };
         assert_eq!(*d.programmer.retargets.lock(), [(0x100, 7, Some(expected))]);
-        assert_eq!(
-            d.dev.core.translate_interrupt(0x100, 7),
-            Some(expected),
-            "the core should resolve the mapping it just reported"
-        );
+        let resolved = d
+            .dev
+            .core
+            .translate_interrupt(0x100, 7)
+            .expect("the core should resolve the mapping it just reported");
+        assert_eq!(resolved.interrupt_id, expected.intid);
+        assert_eq!(resolved.processor_id, expected.vp_index);
     }
 
     /// `MAPC` retargets every interrupt in a collection at once, which is the
@@ -642,12 +683,13 @@ mod tests {
 
         d.submit(&[mapc(1, 5)]);
 
-        let expected = Translation {
-            processor_id: 5,
-            interrupt_id: 8192,
+        let expected = ItsTranslation {
+            vp_index: 5,
+            intid: 8192,
         };
         assert_eq!(*d.programmer.retargets.lock(), [(0x100, 7, Some(expected))]);
-        assert_eq!(d.dev.core.translate_interrupt(0x100, 7), Some(expected));
+        let resolved = d.dev.core.translate_interrupt(0x100, 7).expect("mapped");
+        assert_eq!(resolved.processor_id, expected.vp_index);
     }
 
     /// `INV` tells the ITS that the guest's LPI configuration table changed.
@@ -663,7 +705,45 @@ mod tests {
 
         assert_eq!(
             *d.programmer.invalidations.lock(),
-            [InvalidateTarget::Interrupt(8192)]
+            [(0, ItsInvalidate::Interrupt(8192))]
+        );
+    }
+
+    /// The hypervisor reads the LPI configuration table through a specific
+    /// redistributor, so an invalidation must be attributed to the processor
+    /// that actually ran the command — not to whichever one is convenient.
+    #[test]
+    fn invalidation_is_attributed_to_the_trapping_vp() {
+        let mut d = new_device();
+        d.enable();
+        d.submit_from_vp(3, &[mapd(0x100), mapc(1, 3), mapti(0x100, 7, 8192, 1)]);
+
+        // INV DeviceID, EventID, issued from a different processor.
+        d.submit_from_vp(5, &[[0x0C | (0x100u64 << 32), 7, 0, 0]]);
+
+        assert_eq!(
+            *d.programmer.invalidations.lock(),
+            [(5, ItsInvalidate::Interrupt(8192))]
+        );
+    }
+
+    /// The recorded processor must not leak past the write it belongs to.
+    #[test]
+    fn each_invalidation_uses_its_own_vp() {
+        let mut d = new_device();
+        d.enable();
+        d.submit_from_vp(1, &[mapd(0x100), mapc(1, 3), mapti(0x100, 7, 8192, 1)]);
+
+        let inv = [0x0C | (0x100u64 << 32), 7, 0, 0];
+        d.submit_from_vp(2, &[inv]);
+        d.submit_from_vp(6, &[inv]);
+
+        assert_eq!(
+            *d.programmer.invalidations.lock(),
+            [
+                (2, ItsInvalidate::Interrupt(8192)),
+                (6, ItsInvalidate::Interrupt(8192)),
+            ]
         );
     }
 
@@ -683,6 +763,9 @@ mod tests {
         assert_eq!(d.read64(GITS_CWRITER_OFFSET), 0);
         // The guest's old mappings must be gone, not merely unreachable.
         assert_eq!(d.dev.core.translate_interrupt(0x100, 7), None);
+        // An LPI reservation outlives the tables that describe it, so the data
+        // plane has to be told to let go of them.
+        assert_eq!(*d.programmer.resets.lock(), 1);
     }
 
     #[test]

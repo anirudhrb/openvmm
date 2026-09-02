@@ -37,6 +37,10 @@ pub(super) struct PcieMsiPlatform<'a> {
     /// Processor topology (determines ITS wrapping on aarch64).
     #[cfg_attr(not(guest_arch = "aarch64"), expect(dead_code))]
     pub processor_topology: &'a ProcessorTopology,
+    /// MSI target for the emulated ITS, when one is present. Takes the place
+    /// of the partition's own `SignalMsi`, which cannot reach the ITS device.
+    #[cfg(guest_arch = "aarch64")]
+    pub its_signal_msi: Option<Arc<dyn pci_core::msi::SignalMsi>>,
     /// x86 IOMMU shared state for interrupt remapping, or `None` if this
     /// entity is not behind an IOMMU.
     #[cfg(guest_arch = "x86_64")]
@@ -89,6 +93,12 @@ impl PcieMsiPlatform<'_> {
     /// is disabled because kernel-mediated MSI routes bypass emulated
     /// interrupt remapping.
     pub fn wrap_msi(&self) -> PcieMsiRouting {
+        #[cfg(guest_arch = "aarch64")]
+        let mut signal_msi: Option<Arc<dyn pci_core::msi::SignalMsi>> = self
+            .its_signal_msi
+            .clone()
+            .or_else(|| self.partition.as_signal_msi(Vtl::Vtl0));
+        #[cfg(guest_arch = "x86_64")]
         let mut signal_msi: Option<Arc<dyn pci_core::msi::SignalMsi>> =
             self.partition.as_signal_msi(Vtl::Vtl0);
         let mut irqfd: Option<Arc<dyn vmcore::irqfd::IrqFd>> = self.partition.irqfd();

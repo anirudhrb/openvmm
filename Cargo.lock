@@ -5906,6 +5906,7 @@ dependencies = [
  "futures-concurrency",
  "get_resources",
  "getrandom 0.4.2",
+ "gic_its",
  "guestmem",
  "guid",
  "hvdef",

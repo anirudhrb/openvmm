@@ -13,6 +13,7 @@ pub mod device_state;
 pub mod interrupt;
 pub mod irqfd;
 pub mod isa_dma_channel;
+pub mod its;
 pub mod line_interrupt;
 pub mod local_only;
 pub mod monitor;

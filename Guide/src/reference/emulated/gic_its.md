@@ -87,11 +87,44 @@ Commands are drained synchronously from the guest's `GITS_CWRITER` write, on
 the vCPU thread that trapped it. That is acceptable because command queue
 writes are configuration-time events rather than per-interrupt events.
 
+## Data plane
+
+`ItsDataPlane` is implemented for the Microsoft hypervisor in `virt_mshv`. It
+keeps a `(DeviceID, EventID)` to LPI binding map and drives it with four
+hypercalls:
+
+| Event | Hypercall |
+| --- | --- |
+| An interrupt is mapped | `HvCallReserveVirtualInterrupt` |
+| Its target processor changes | `HvCallSetVirtualInterruptTarget` |
+| Its LPI changes | release, then reserve |
+| It is unmapped | `HvCallReleaseVirtualInterrupt` |
+| It fires | `HvCallAssertVirtualInterrupt` |
+
+Reserving is not optional: the hypervisor refuses to assert an LPI that has not
+been reserved. Reservation also fixes the target processor, which is why the
+assert carries no destination — it is a pure doorbell.
+
+Because reserving fails while an LPI is still claimed, a change of LPI is
+issued as a release followed by a reserve, never the other way round.
+
+`INV` and `INVALL` are forwarded by writing the `ItsInv` VP register, whose
+value is the LPI to refresh or `!0` for all of them. That write is directed at
+the processor that trapped the command queue write, because the hypervisor
+re-reads the guest's LPI configuration table through that processor's
+redistributor.
+
+Only emulated devices are supported. An assigned device's LPI has to be
+programmed through the device-interrupt hypercalls instead, since the
+hypervisor's per-LPI ownership bits for the two paths are mutually exclusive.
+
 ## Current status
 
-**Control plane only.** The device emulates the register frame, the command
-queue and the translation tables, but no `ItsDataPlane` implementation exists
-yet, so nothing delivers the resulting interrupts.
+The control plane is complete and the emulated-device data plane is
+implemented, but interrupts are not yet delivered end to end: nothing
+subscribes interrupts to the ITS yet, so no translation is ever reported, and
+the root partition's hypercall allowlist does not yet permit the three
+virtual-interrupt hypercalls above.
 
 ## Diagnostics
 
