@@ -32,6 +32,7 @@ use hvdef::HvMessageType;
 use hvdef::HvPartitionPropertyCode;
 use hvdef::Vtl;
 use hvdef::hypercall::HvRegisterAssoc;
+use mshv_ioctls::Mshv;
 use mshv_ioctls::MshvError;
 use pal::unix::pthread::Pthread;
 use pci_core::msi::SignalMsi;
@@ -79,9 +80,17 @@ impl virt::Hypervisor for LinuxMshv {
             return Err(ErrorInner::IsolationNotSupported.into());
         }
 
+        // Ask the host what it supports and expose all of it to the guest.
+        let supported_features = host_processor_features(&self.mshv)?;
+
         let create_args = mshv_bindings::mshv_create_partition_v2 {
-            pt_flags: 1 << mshv_bindings::MSHV_PT_BIT_GPA_SUPER_PAGES,
+            pt_flags: (1 << mshv_bindings::MSHV_PT_BIT_GPA_SUPER_PAGES)
+                | (1 << mshv_bindings::MSHV_PT_BIT_CPU_AND_XSAVE_FEATURES),
             pt_isolation: mshv_bindings::MSHV_PT_ISOLATION_NONE as u64,
+            pt_num_cpu_fbanks: mshv_bindings::MSHV_NUM_CPU_FEATURES_BANKS as u16,
+            // The sense of these banks is inverted: a set bit *disables* the
+            // feature.
+            pt_cpu_fbanks: supported_features.map(|bank| !bank),
             ..Default::default()
         };
 
@@ -716,4 +725,25 @@ impl hv1_hypercall::Arm64RegisterState for MshvHypercallHandler<'_> {
         self.x[n as usize] = v;
         self.dirty = true;
     }
+}
+
+// ---------------------------------------------------------------------------
+// CPU features
+// ---------------------------------------------------------------------------
+
+/// Queries the processor features the host supports, returning one value per
+/// feature bank.
+fn host_processor_features(mshv: &Mshv) -> Result<[u64; 2], Error> {
+    const _: () = assert!(mshv_bindings::MSHV_NUM_CPU_FEATURES_BANKS == 2);
+
+    let mut banks = [0; 2];
+    for (bank, code) in banks.iter_mut().zip([
+        HvPartitionPropertyCode::ProcessorFeatures0,
+        HvPartitionPropertyCode::ProcessorFeatures1,
+    ]) {
+        *bank = mshv
+            .get_host_partition_property(code.0)
+            .map_err(|e| ErrorInner::GetHostPartitionProperty(e.into()))?;
+    }
+    Ok(banks)
 }
