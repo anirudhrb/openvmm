@@ -63,7 +63,9 @@ impl MshvPartitionInner {
 
     /// Sets the MSI routing for a GSI and pushes the full routing table to the
     /// kernel. Rolls back the in-memory state on ioctl failure.
-    fn set_gsi_route(&self, gsi: u32, route: Option<MsiRoute>) -> anyhow::Result<()> {
+    ///
+    /// Returns whether the routing actually changed.
+    fn set_gsi_route(&self, gsi: u32, route: Option<MsiRoute>) -> anyhow::Result<bool> {
         let mut states = self.gsi_states.lock();
         let state = &mut states[gsi as usize];
         anyhow::ensure!(
@@ -75,7 +77,7 @@ impl MshvPartitionInner {
             None => GsiState::Disabled,
         };
         if *state == new_state {
-            return Ok(());
+            return Ok(false);
         }
         let old_state = *state;
         *state = new_state;
@@ -85,7 +87,7 @@ impl MshvPartitionInner {
             states[gsi as usize] = old_state;
             return Err(e);
         }
-        Ok(())
+        Ok(true)
     }
 
     /// Rebuilds and pushes the full routing table to the kernel.
@@ -221,8 +223,8 @@ struct MshvIrqFdRoute {
 }
 
 impl MshvIrqFdRoute {
-    fn disarm(&self) {
-        let mut armed = self.armed.lock();
+    /// Unregisters the irqfd if it is armed. The caller must hold `armed`.
+    fn disarm_locked(&self, armed: &mut bool) {
         if *armed {
             // SAFETY: `self.event` is the same event passed to `register_irqfd`.
             if let Err(e) = unsafe { self.partition.unregister_irqfd(&self.event, self.gsi) } {
@@ -231,6 +233,11 @@ impl MshvIrqFdRoute {
             }
             *armed = false;
         }
+    }
+
+    fn disarm(&self) {
+        let mut armed = self.armed.lock();
+        self.disarm_locked(&mut armed);
     }
 }
 
@@ -246,9 +253,21 @@ impl IrqFdRoute for MshvIrqFdRoute {
             address_hi: (address >> 32) as u32,
             data,
         };
-        if let Err(e) = self.partition.set_gsi_route(self.gsi, Some(route)) {
-            tracelimit::warn_ratelimited!(error = ?e, gsi = self.gsi, "failed to set GSI route");
-            return;
+        let changed = match self.partition.set_gsi_route(self.gsi, Some(route)) {
+            Ok(changed) => changed,
+            Err(e) => {
+                tracelimit::warn_ratelimited!(error = ?e, gsi = self.gsi, "failed to set GSI route");
+                return;
+            }
+        };
+        // The kernel maps a passthrough device interrupt to the guest vector
+        // when the irqfd is armed, and on aarch64 does not re-map on a later
+        // routing change. So if the route changed underneath an armed irqfd,
+        // disarm to force an unmap, then arm again below to re-map with the
+        // new vector. Unmapping uses state recorded at map time, so it does
+        // not depend on the routing entry we just overwrote.
+        if changed {
+            self.disarm_locked(&mut armed);
         }
         if !*armed {
             // SAFETY: `self.event` is owned by this struct and will outlive

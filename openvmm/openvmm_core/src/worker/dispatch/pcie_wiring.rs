@@ -39,6 +39,8 @@ pub(super) struct PcieMsiPlatform<'a> {
     pub processor_topology: &'a ProcessorTopology,
     /// MSI target for the emulated ITS, when one is present. Takes the place
     /// of the partition's own `SignalMsi`, which cannot reach the ITS device.
+    /// Already selected for this entity's ownership model — see
+    /// [`ItsMsiTargets`](super::its_wiring::ItsMsiTargets).
     #[cfg(guest_arch = "aarch64")]
     pub its_signal_msi: Option<Arc<dyn pci_core::msi::SignalMsi>>,
     /// x86 IOMMU shared state for interrupt remapping, or `None` if this

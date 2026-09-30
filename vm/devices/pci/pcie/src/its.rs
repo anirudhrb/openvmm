@@ -13,6 +13,7 @@
 //! root complex or switch connection.
 
 use pal_event::Event;
+use pci_core::msi::MsiRouteVector;
 use pci_core::msi::SignalMsi;
 use std::sync::Arc;
 use vmcore::irqfd::IrqFd;
@@ -51,12 +52,12 @@ impl SignalMsi for ItsSignalMsi {
             .signal_msi(Some(self.its_devid(bdf)), address, data);
     }
 
-    fn enable_msi(&self, devid: Option<u32>, address: u64, data: u32) {
+    fn enable_msi(&self, devid: Option<u32>, address: u64, data: u32) -> MsiRouteVector {
         let Some(bdf) = devid else {
-            return;
+            return MsiRouteVector::Unresolved;
         };
         self.inner
-            .enable_msi(Some(self.its_devid(bdf)), address, data);
+            .enable_msi(Some(self.its_devid(bdf)), address, data)
     }
 
     fn disable_msi(&self, devid: Option<u32>, address: u64, data: u32) {

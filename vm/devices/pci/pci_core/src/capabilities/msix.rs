@@ -5,6 +5,7 @@
 
 use super::PciCapability;
 use crate::msi::MsiRoute;
+use crate::msi::MsiRouteVector;
 use crate::msi::MsiTarget;
 use crate::spec::caps::CapabilityId;
 use crate::spec::caps::msix::MsixCapabilityHeader;
@@ -144,6 +145,11 @@ struct MsiInterruptInner {
     address: u64,
     #[inspect(hex)]
     data: u32,
+    /// Vector a kernel route must carry, as reported by the backend when the
+    /// MSI was enabled. Differs from `data` under a GICv3 ITS, where the data
+    /// payload is an EventID rather than an interrupt ID.
+    #[inspect(skip)]
+    route_vector: MsiRouteVector,
 }
 
 impl Debug for MsiInterruptInner {
@@ -163,8 +169,32 @@ impl MsiInterruptInner {
         self.target.signal_msi(self.address, self.data);
     }
 
+    /// Delivers an interrupt that was latched while the vector was masked.
+    ///
+    /// `drain_pending` takes such an interrupt off the route's event, so
+    /// putting it back is the faithful inverse of that drain. It is also the
+    /// only correct delivery for an assigned device: its LPI is mapped into
+    /// the physical ITS rather than reserved for software delivery, so the
+    /// assert that `signal_msi` ends up performing would be rejected, and the
+    /// interrupt would be lost.
+    ///
+    /// Callers must have brought the route up to date first, so that the
+    /// interrupt is delivered with the vector the guest last programmed.
+    fn deliver_pending(&self) {
+        match &self.route {
+            Some(route) => route.event().signal(),
+            None => self.signal_msi(),
+        }
+    }
+
     fn enable_route(&self, route: &MsiRoute) {
-        route.enable(self.address, self.data);
+        match self.route_vector {
+            MsiRouteVector::GuestData => route.enable(self.address, self.data),
+            MsiRouteVector::Vector(vector) => route.enable(self.address, vector),
+            // Arming with an unresolved vector would deliver some arbitrary
+            // interrupt, so stay disabled until the guest maps this one.
+            MsiRouteVector::Unresolved => route.disable(),
+        }
     }
 }
 
@@ -177,6 +207,7 @@ impl MsiInterrupt {
             enabled: false,
             address: 0,
             data: 0,
+            route_vector: MsiRouteVector::GuestData,
         })))
     }
 
@@ -188,8 +219,9 @@ impl MsiInterrupt {
         state.enabled = true;
 
         // Tell the backend the interrupt is live. An ITS needs this to reserve
-        // the LPI before it can ever be asserted.
-        state.target.enable_msi(address, data);
+        // the LPI before it can ever be asserted, and reports back the vector
+        // any kernel route must carry.
+        state.route_vector = state.target.enable_msi(address, data);
 
         // Program the kernel route if present.
         if let Some(route) = &state.route {
@@ -197,7 +229,7 @@ impl MsiInterrupt {
         }
 
         if state.pending {
-            state.signal_msi();
+            state.deliver_pending();
             state.pending = false;
         }
     }
@@ -878,6 +910,43 @@ mod tests {
 
         // consume_pending drains the event; PBA bit 0 should be set.
         assert_eq!(pba & 1, 1);
+    }
+
+    /// An interrupt latched while a vector was masked must be replayed onto
+    /// the route's event, not through `signal_msi`.
+    ///
+    /// For an assigned device the event is the only delivery path that works:
+    /// its LPI is mapped into the physical ITS rather than reserved for
+    /// software delivery, so the assert behind `signal_msi` is rejected and
+    /// the interrupt is lost.
+    #[test]
+    fn route_replays_pending_to_event_on_unmask() {
+        let (irqfd, _calls) = mock_irqfd(1);
+        let msi_conn = MsiConnection::new();
+        msi_conn.connect_irqfd(irqfd);
+        let (mut msix, mut cap) = MsixEmulator::new(2, 1, &msi_conn.target());
+        let msi_controller = TestPciInterruptController::new();
+        msi_conn.connect(msi_controller.signal_msi());
+
+        let event = msix.interrupt(0).unwrap().event().unwrap().clone();
+
+        // Enable MSI-X and program vector 0, leaving it masked.
+        write_cap_u32(&mut cap, 0, 0x80000000);
+        msix.write_u32(0, 0xFEE00000);
+        msix.write_u32(8, 0x42);
+
+        // The device signals while the vector is masked, and the guest reads
+        // the PBA, which drains the event and latches the interrupt.
+        event.signal();
+        assert_eq!(msix.read_u32(16) & 1, 1);
+        assert!(!event.try_wait(), "PBA read should have drained the event");
+
+        // Unmasking must put the interrupt back on the event...
+        msix.write_u32(12, 0);
+        assert!(event.try_wait(), "pending interrupt was not replayed");
+
+        // ...and must not deliver it through the assert path.
+        assert_eq!(msi_controller.get_next_interrupt(), None);
     }
 
     #[test]
