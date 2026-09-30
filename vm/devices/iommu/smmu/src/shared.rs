@@ -30,6 +30,7 @@ use guestmem::GuestMemory;
 use pal_event::Event;
 use parking_lot::Mutex;
 use parking_lot::RwLock;
+use pci_core::msi::MsiRouteVector;
 use pci_core::msi::SignalMsi;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -1421,14 +1422,15 @@ impl SignalMsi for SmmuSignalMsi {
         }
     }
 
-    fn enable_msi(&self, devid: Option<u32>, address: u64, data: u32) {
+    fn enable_msi(&self, devid: Option<u32>, address: u64, data: u32) -> MsiRouteVector {
         // The address the guest programmed may be an IOVA, and a consumer such
         // as the ITS validates it against the doorbell's real address, so
         // translate here exactly as `signal_msi` does. A translation failure is
         // not reported: it is not an interrupt being dropped, and the guest may
         // legitimately program the table before the SMMU.
-        if let Some(address) = self.translate_msi_address(devid, address) {
-            self.inner.enable_msi(devid, address, data);
+        match self.translate_msi_address(devid, address) {
+            Some(address) => self.inner.enable_msi(devid, address, data),
+            None => MsiRouteVector::Unresolved,
         }
     }
 

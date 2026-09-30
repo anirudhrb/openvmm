@@ -11,6 +11,7 @@
 use closeable_mutex::CloseableMutex;
 use gic_its::GicItsDevice;
 use guestmem::GuestMemory;
+use pci_core::msi::MsiRouteVector;
 use pci_core::msi::SignalMsi;
 use std::sync::Arc;
 use vmcore::its::ItsDataPlane;
@@ -30,7 +31,7 @@ pub(super) fn setup_its(
     data_plane: Option<Arc<dyn ItsDataPlane>>,
     chipset_builder: &ChipsetBuilder<'_>,
     gm: &GuestMemory,
-) -> anyhow::Result<Option<Arc<dyn SignalMsi>>> {
+) -> anyhow::Result<Option<ItsMsiTargets>> {
     let Some(data_plane) = data_plane else {
         tracing::warn!(
             "ITS is configured but the hypervisor backend cannot deliver LPIs; \
@@ -50,11 +51,48 @@ pub(super) fn setup_its(
             .add(move |_services| GicItsDevice::new(its_base, gm, data_plane))?
     };
 
-    Ok(Some(Arc::new(ItsMsiTarget {
-        device,
-        data_plane,
-        translater_addr: its_base + GITS_TRANSLATER_OFFSET,
-    })))
+    let translater_addr = its_base + GITS_TRANSLATER_OFFSET;
+    Ok(Some(ItsMsiTargets {
+        emulated: Arc::new(ItsMsiTarget {
+            device: device.clone(),
+            data_plane: data_plane.clone(),
+            translater_addr,
+            assigned: false,
+        }),
+        assigned: Arc::new(ItsMsiTarget {
+            device,
+            data_plane,
+            translater_addr,
+            assigned: true,
+        }),
+    }))
+}
+
+/// The ITS MSI targets, one per device ownership model.
+///
+/// The two behave differently on the configuration path because the hypervisor
+/// makes the two LPI ownership models mutually exclusive: an emulated device's
+/// LPI is reserved and asserted by this VMM, whereas a passthrough device's is
+/// mapped into the physical ITS by the kernel. Reserving an LPI the kernel is
+/// about to map makes the map fail, so the ITS must know which it is dealing
+/// with. Both share one ITS device and data plane.
+#[derive(Clone)]
+pub(super) struct ItsMsiTargets {
+    /// For devices this VMM emulates.
+    pub emulated: Arc<dyn SignalMsi>,
+    /// For devices assigned to the guest through VFIO.
+    pub assigned: Arc<dyn SignalMsi>,
+}
+
+impl ItsMsiTargets {
+    /// Picks the target for a device by whether it is assigned to the guest.
+    pub fn select(&self, assigned: bool) -> Arc<dyn SignalMsi> {
+        if assigned {
+            self.assigned.clone()
+        } else {
+            self.emulated.clone()
+        }
+    }
 }
 
 /// Routes PCIe MSIs to the emulated ITS.
@@ -70,6 +108,8 @@ struct ItsMsiTarget {
     data_plane: Arc<dyn ItsDataPlane>,
     /// Address a device must write to for the write to be an MSI.
     translater_addr: u64,
+    /// Whether this target serves VFIO-assigned devices. See [`ItsMsiTargets`].
+    assigned: bool,
 }
 
 impl ItsMsiTarget {
@@ -103,14 +143,27 @@ impl SignalMsi for ItsMsiTarget {
         self.data_plane.assert(devid, data);
     }
 
-    fn enable_msi(&self, devid: Option<u32>, address: u64, data: u32) {
+    fn enable_msi(&self, devid: Option<u32>, address: u64, data: u32) -> MsiRouteVector {
         let Some(devid) = devid else {
-            return;
+            return MsiRouteVector::Unresolved;
         };
         if !self.is_doorbell(address, data) {
-            return;
+            return MsiRouteVector::Unresolved;
         }
-        self.device.lock().subscribe_interrupt(devid, data);
+        // Subscribing reserves the LPI and claims it for software delivery.
+        // For an assigned device the kernel maps that same LPI into the
+        // physical ITS instead, and the hypervisor rejects the map if it is
+        // already reserved, so leave it alone.
+        if !self.assigned {
+            self.device.lock().subscribe_interrupt(devid, data);
+        }
+        // A kernel route delivers by LPI, but the guest wrote an EventID, so
+        // resolve it. An unmapped interrupt has no LPI yet; the guest maps it
+        // through the ITS command queue, which is not ordered against this.
+        match self.device.lock().translate_interrupt(devid, data) {
+            Some(intid) => MsiRouteVector::Vector(intid),
+            None => MsiRouteVector::Unresolved,
+        }
     }
 
     fn disable_msi(&self, devid: Option<u32>, address: u64, data: u32) {
@@ -120,6 +173,8 @@ impl SignalMsi for ItsMsiTarget {
         if !self.is_doorbell(address, data) {
             return;
         }
-        self.device.lock().unsubscribe_interrupt(devid, data);
+        if !self.assigned {
+            self.device.lock().unsubscribe_interrupt(devid, data);
+        }
     }
 }

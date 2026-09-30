@@ -823,10 +823,10 @@ struct LoadedVmInner {
     /// Instantiated IOMMU devices (ACPI configs + per-RC shared state),
     /// keyed by IOMMU type. `IommuDevices::None` when no IOMMU is configured.
     iommu_devices: IommuDevices,
-    /// MSI target for the emulated GICv3 ITS, when one is present. Retained so
-    /// that hot-added PCIe devices are wired to it too.
+    /// MSI targets for the emulated GICv3 ITS, when one is present. Retained so
+    /// that hot-added PCIe devices are wired to them too.
     #[cfg(guest_arch = "aarch64")]
-    its_signal_msi: Option<Arc<dyn pci_core::msi::SignalMsi>>,
+    its_msi_targets: Option<its_wiring::ItsMsiTargets>,
     /// IOAPIC PCIe Requester ID when x86 IOMMU interrupt remapping is active.
     /// For AMD this is threaded into IVRS at firmware-load time; for Intel
     /// the matching DMAR device scope is carried by the per-unit ACPI config.
@@ -878,6 +878,34 @@ fn smmu_for_rc(iommu_devices: &IommuDevices, rc_idx: usize) -> Option<&Arc<smmu:
     match iommu_devices {
         IommuDevices::Smmu(devices) => devices.shared_states.get(rc_idx).and_then(|s| s.as_ref()),
         IommuDevices::None => None,
+    }
+}
+
+/// Whether a PCIe device resource is assigned to the guest through VFIO, as
+/// opposed to being emulated by this VMM.
+///
+/// Under a GICv3 ITS the two take mutually exclusive LPI ownership models, so
+/// the ITS must be told which it is dealing with. That decision is needed when
+/// the device's MSI path is wired, which happens before the resource is
+/// resolved, so it is made from the resource ID the VFIO resolvers register
+/// for rather than from the resolved device.
+#[cfg(guest_arch = "aarch64")]
+fn is_assigned_pcie_device(resource: &Resource<vm_resource::kind::PciDeviceHandleKind>) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        use vfio_assigned_device_resources::VfioCdevDeviceHandle;
+        use vfio_assigned_device_resources::VfioDeviceHandle;
+        use vm_resource::ResourceId;
+        use vm_resource::kind::PciDeviceHandleKind;
+
+        let id = resource.id();
+        id == <VfioDeviceHandle as ResourceId<PciDeviceHandleKind>>::ID
+            || id == <VfioCdevDeviceHandle as ResourceId<PciDeviceHandleKind>>::ID
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = resource;
+        false
     }
 }
 
@@ -2462,7 +2490,7 @@ impl InitializedVm {
         // through the partition's own `SignalMsi`, because it needs the ITS
         // device as well as the partition.
         #[cfg(guest_arch = "aarch64")]
-        let its_signal_msi = match processor_topology.gic_msi() {
+        let its_msi_targets = match processor_topology.gic_msi() {
             vm_topology::processor::aarch64::GicMsiController::Its(its) => its_wiring::setup_its(
                 its.its_base,
                 partition.its_data_plane(),
@@ -2551,7 +2579,7 @@ impl InitializedVm {
                 segment: deferred.segment,
                 processor_topology: &processor_topology,
                 #[cfg(guest_arch = "aarch64")]
-                its_signal_msi: its_signal_msi.clone(),
+                its_signal_msi: its_msi_targets.as_ref().map(|t| t.emulated.clone()),
                 #[cfg(guest_arch = "x86_64")]
                 iommu,
             }
@@ -2572,7 +2600,7 @@ impl InitializedVm {
         // the requester ID supplied by the PCI MSI path.
 
         #[cfg(guest_arch = "aarch64")]
-        let its_signal_msi_ref = &its_signal_msi;
+        let its_msi_targets_ref = &its_msi_targets;
 
         try_join_all(cfg.pcie_devices.into_iter().map(|dev_cfg| {
             let chipset_builder = &chipset_builder;
@@ -2595,6 +2623,11 @@ impl InitializedVm {
 
                 let msi_conn = pci_core::msi::MsiConnection::new();
 
+                #[cfg(guest_arch = "aarch64")]
+                let its_signal_msi = its_msi_targets_ref
+                    .as_ref()
+                    .map(|t| t.select(is_assigned_pcie_device(&dev_cfg.resource)));
+
                 let pcie_ctx =
                     pcie_wiring::build_device_wiring(pcie_wiring::PcieDeviceWiringParams {
                         msi_platform: pcie_wiring::PcieMsiPlatform {
@@ -2602,7 +2635,7 @@ impl InitializedVm {
                             segment: pi.segment,
                             processor_topology,
                             #[cfg(guest_arch = "aarch64")]
-                            its_signal_msi: its_signal_msi_ref.clone(),
+                            its_signal_msi,
                             #[cfg(guest_arch = "x86_64")]
                             iommu: x86_iommu_for_rc(iommu_devices, pi.rc_idx),
                         },
@@ -3112,7 +3145,7 @@ impl InitializedVm {
                 chipset: chipset.chipset.clone(),
                 iommu_devices,
                 #[cfg(guest_arch = "aarch64")]
-                its_signal_msi: its_signal_msi.clone(),
+                its_msi_targets: its_msi_targets.clone(),
                 #[cfg(guest_arch = "x86_64")]
                 ioapic_iommu_rid,
                 pcie_host_bridges,
@@ -3818,7 +3851,11 @@ impl LoadedVm {
                                         segment,
                                         processor_topology: &self.inner.processor_topology,
                                         #[cfg(guest_arch = "aarch64")]
-                                        its_signal_msi: self.inner.its_signal_msi.clone(),
+                                        its_signal_msi: self
+                                            .inner
+                                            .its_msi_targets
+                                            .as_ref()
+                                            .map(|t| t.select(is_assigned_pcie_device(&resource))),
                                         #[cfg(guest_arch = "x86_64")]
                                         iommu: x86_iommu_for_rc(
                                             &self.inner.iommu_devices,

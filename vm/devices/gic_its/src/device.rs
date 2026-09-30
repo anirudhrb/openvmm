@@ -127,6 +127,18 @@ impl GicItsDevice {
         self.core.unsubscribe_interrupt(device_id, event_id);
     }
 
+    /// Resolves an interrupt's LPI, or `None` if the guest has not mapped it.
+    ///
+    /// Unlike [`subscribe_interrupt`](Self::subscribe_interrupt) this records
+    /// nothing; it answers the translation question for a caller that must
+    /// program the LPI somewhere the ITS does not reach, such as a kernel MSI
+    /// route for a passthrough device.
+    pub fn translate_interrupt(&self, device_id: u32, event_id: u32) -> Option<u32> {
+        self.core
+            .translate_interrupt(device_id, event_id)
+            .map(|t| t.interrupt_id)
+    }
+
     /// Converts an absolute guest address into a window offset.    ///
     /// The chipset only routes addresses inside the registered region, so this
     /// should never fail; it is fallible rather than a subtraction so that a

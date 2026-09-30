@@ -10,6 +10,23 @@ use std::sync::Arc;
 use vmcore::irqfd::IrqFd;
 use vmcore::irqfd::IrqFdRoute;
 
+/// What a kernel-mediated MSI route should carry as its interrupt vector.
+///
+/// A kernel route delivers by interrupt ID. For backends that deliver MSIs
+/// statelessly the guest's data payload already is that ID, but under a GICv3
+/// ITS it is an EventID that only the ITS can resolve, so the ITS reports the
+/// resolved LPI here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MsiRouteVector {
+    /// The guest's data payload is already the interrupt ID.
+    GuestData,
+    /// Use this interrupt ID in place of the guest's data payload.
+    Vector(u32),
+    /// The interrupt has no vector yet, so a kernel route must stay disabled.
+    /// Routing an unresolved vector would deliver some arbitrary interrupt.
+    Unresolved,
+}
+
 /// An object that can signal MSI interrupts.
 pub trait SignalMsi: Send + Sync {
     /// Signals a message-signaled interrupt at the specified address with the specified data.
@@ -31,8 +48,13 @@ pub trait SignalMsi: Send + Sync {
     ///
     /// Implementations must tolerate being called repeatedly for the same
     /// interrupt, since a guest may mask and unmask a vector freely.
-    fn enable_msi(&self, devid: Option<u32>, address: u64, data: u32) {
+    ///
+    /// Returns the vector a kernel-mediated route must carry for this
+    /// interrupt. Backends that deliver MSIs statelessly return
+    /// [`MsiRouteVector::GuestData`].
+    fn enable_msi(&self, devid: Option<u32>, address: u64, data: u32) -> MsiRouteVector {
         let _ = (devid, address, data);
+        MsiRouteVector::GuestData
     }
 
     /// Notifies that the guest has disabled this MSI.
@@ -386,12 +408,15 @@ impl MsiTarget {
     /// Notifies the backend that the guest enabled an MSI on this target,
     /// resolving the requester ID the same way
     /// [`signal_msi`](Self::signal_msi) does.
-    pub fn enable_msi(&self, address: u64, data: u32) {
+    ///
+    /// Returns the vector a kernel-mediated route must carry, per
+    /// [`SignalMsi::enable_msi`].
+    pub fn enable_msi(&self, address: u64, data: u32) -> MsiRouteVector {
         let Some(resolved) = resolve_default_rid(&self.default_rid) else {
-            return;
+            return MsiRouteVector::Unresolved;
         };
         let inner = self.inner.read();
-        inner.signal_msi.enable_msi(Some(resolved), address, data);
+        inner.signal_msi.enable_msi(Some(resolved), address, data)
     }
 
     /// Notifies the backend that the guest disabled an MSI on this target.
